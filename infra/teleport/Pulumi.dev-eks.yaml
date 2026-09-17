@@ -1,0 +1,33 @@
+# dev-eks: Teleport on an EXISTING eks cluster reached through kubeContext.
+#
+# Scaffold: passes `make preview STACK=dev-eks` (optionally against the kind context with
+#   make preview STACK=dev-eks PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local")
+# Before a real deploy: set kubeContext, clusterName/publicAddr (a DNS name you control), a cert-manager
+# ClusterIssuer or ACME email, GitHub SSO secrets (make github-sso STACK=dev-eks), images.registry,
+# and chartMode (aws/gcp/azure) once the managed backends exist.
+config:
+  teleport:env: dev
+  teleport:platform: eks
+  teleport:kubeContext: kind-teleport-local
+  teleport:clusterName: teleport.dev.example.com
+  teleport:publicAddr: teleport.dev.example.com:443
+  teleport:version: "18.11.1"
+  teleport:edition: community
+  teleport:auth:
+    type: local # switch to github with: make github-sso STACK=dev-eks
+    secondFactors: [webauthn, otp]
+    localAuth: true
+  teleport:tls:
+    mode: cert-manager
+    issuerName: letsencrypt
+    issuerKind: ClusterIssuer
+  teleport:images:
+    registry: ghcr.io/CHANGE-ME/k8s-teleport
+    tag: latest
+    pullPolicy: Always
+  teleport:users:
+    - name: admin
+      roles: [editor, access, auditor, approver]
+      traits:
+        logins: [root, dev]
+encryptionsalt: v1:uysrS7tGTT8=:v1:MpIcHfOJBQzZncK/:6iBYh1OmxBWtWxUNQWRyrPMXKPBMfw==

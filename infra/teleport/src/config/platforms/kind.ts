@@ -1,0 +1,18 @@
+import type { DeepPartial } from "../../lib/merge";
+import type { StackConfigInput } from "../schema";
+
+/** Defaults for a local kind cluster. Stack config (Pulumi.local.yaml) overrides these. */
+export const kindDefaults: DeepPartial<StackConfigInput> = {
+  env: "local",
+  clusterName: "teleport.127.0.0.1.nip.io",
+  publicAddr: "teleport.127.0.0.1.nip.io:3080",
+  edition: "community",
+  exposure: { type: "nodeport", nodePort: 30080 },
+  tls: { mode: "self-signed" },
+  auth: { type: "github", secondFactors: ["otp"], localAuth: true },
+  chartMode: { mode: "standalone", volumeSize: "2Gi" },
+  images: { registry: "", tag: "dev", pullPolicy: "IfNotPresent" },
+  insecureLocal: true,
+  dummies: { enabled: true, sshNodes: { dev: 2, prod: 1 }, postgres: true, mysql: false, httpbin: true, cloudStandin: "static" },
+  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false } },
+};

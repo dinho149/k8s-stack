@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+# Headless `tsh login --auth local` with password + TOTP. Inputs via environment:
+#   TSH_BIN PROXY_ADDR TSH_USER TSH_PASSWORD TSH_OTP  (TELEPORT_HOME is inherited)
+set timeout 60
+log_user 1
+spawn $env(TSH_BIN) --insecure --proxy $env(PROXY_ADDR) login --auth local --user $env(TSH_USER)
+expect {
+  -re {(?i)password[^\n]*:} { send -- "$env(TSH_PASSWORD)\r" }
+  timeout { puts "timeout waiting for password prompt"; exit 1 }
+}
+expect {
+  -re {(?i)(OTP|one-time|code)[^\n]*:} { send -- "$env(TSH_OTP)\r" }
+  timeout { puts "timeout waiting for OTP prompt"; exit 1 }
+}
+set logged_in 0
+expect {
+  -re {Logged in as} { set logged_in 1; exp_continue }
+  -re {ERROR} { puts "login error"; exit 1 }
+  eof { }
+  timeout { puts "timeout after OTP"; exit 1 }
+}
+if {!$logged_in} { puts "tsh exited without logging in"; exit 1 }
+exit 0

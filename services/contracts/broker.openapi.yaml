@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: access-broker API
+  version: "1"
+  description: |
+    HTTP API of the Teleport access broker (services/teleport-access, `broker` subcommand).
+    Consumed by the chat agent (services/access-agent). All /v1 routes require `Authorization: Bearer <TA_BROKER_API_TOKEN>`.
+    The broker also POSTs events to the agent (see `components.schemas.Event`), signed with
+    `X-Broker-Signature: sha256=HMAC-SHA256(secret, "<X-Broker-Timestamp>.<body>")` and deduplicated by `X-Broker-Event-Id`.
+paths:
+  /healthz: { get: { responses: { "200": { description: ok } } } }
+  /readyz: { get: { responses: { "200": { description: ready }, "503": { description: not ready } } } }
+  /v1/requests:
+    get:
+      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, approved, denied, all], default: pending } }]
+      responses: { "200": { description: list, content: { application/json: { schema: { type: object, properties: { requests: { type: array, items: { $ref: "#/components/schemas/Request" } } } } } } } }
+  /v1/requests/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string }, description: full id or unique prefix }]
+      responses: { "200": { description: request, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "404": { $ref: "#/components/responses/Error" } }
+  /v1/requests/{id}/approve:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses:
+        "200": { description: approved, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }
+        "403": { description: "self_approval | not_approver | teleport_denied", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: not_pending, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/requests/{id}/deny:
+    post:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses: { "200": { description: denied }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
+  /v1/policy/evaluate:
+    post:
+      requestBody: { content: { application/json: { schema: { type: object, properties: { requester: { type: string }, roles: { type: array, items: { type: string } }, ttl: { type: string } } } } } }
+      responses: { "200": { description: decision, content: { application/json: { schema: { $ref: "#/components/schemas/PolicyDecision" } } } } }
+  /v1/approvers:
+    get:
+      parameters: [{ name: role, in: query, schema: { type: string } }]
+      responses: { "200": { description: approvers, content: { application/json: { schema: { type: object, properties: { approver_roles: { type: array, items: { type: string } }, emails: { type: array, items: { type: string } } } } } } } }
+  /v1/users/by-email:
+    get:
+      parameters: [{ name: email, in: query, required: true, schema: { type: string } }]
+      responses: { "200": { description: "{} when unknown", content: { application/json: { schema: { type: object, properties: { user: { type: string } } } } } } }
+  /v1/users/{user}/roles:
+    get:
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: roles, content: { application/json: { schema: { type: object, properties: { roles: { type: array, items: { type: string } }, traits: { type: object } } } } } } }
+components:
+  responses:
+    Error: { description: error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Error: { type: object, required: [error, code], properties: { error: { type: string }, code: { type: string } } }
+    Approver:
+      type: object
+      required: [teleport_user, adapter]
+      properties: { teleport_user: { type: string }, email: { type: [string, "null"] }, adapter: { type: string }, platform_user_id: { type: string } }
+    Decision:
+      type: object
+      required: [approver]
+      properties: { approver: { $ref: "#/components/schemas/Approver" }, reason: { type: string } }
+    PolicyDecision:
+      type: object
+      properties: { action: { type: string, enum: [auto_approve, require_approval, deny] }, rule: { type: string }, reason: { type: string }, ttl_cap: { type: string }, approvers: { type: object, properties: { teleport_roles: { type: array, items: { type: string } }, emails: { type: array, items: { type: string } } } } }
+    Resolution:
+      type: object
+      properties: { state: { type: string, enum: [approved, denied, expired] }, by: { type: string }, mode: { type: string, enum: [auto, chat, external] }, reason: { type: string } }
+    Request:
+      type: object
+      required: [id, user, roles, state, created, expires]
+      properties:
+        id: { type: string }
+        user: { type: string }
+        roles: { type: array, items: { type: string } }
+        resource_ids: { type: array, items: { type: string } }
+        reason: { type: string }
+        state: { type: string, enum: [PENDING, APPROVED, DENIED, PROMOTED] }
+        created: { type: string, format: date-time }
+        expires: { type: string, format: date-time }
+        access_expiry: { type: string, format: date-time }
+        decision: { $ref: "#/components/schemas/PolicyDecision" }
+        resolution: { $ref: "#/components/schemas/Resolution" }
+        reviews: { type: array, items: { type: object } }
+    Event:
+      type: object
+      required: [type, request]
+      properties:
+        type: { type: string, enum: [request.pending_review, request.resolved] }
+        request: { $ref: "#/components/schemas/Request" }
+        requester_email: { type: string }
+        notify: { type: object, properties: { channels: { type: array, items: { type: object, properties: { adapter: { type: string }, target: { type: string } } } }, mention_approvers: { type: boolean } } }
+        approver_emails: { type: array, items: { type: string } }
+        resolution: { $ref: "#/components/schemas/Resolution" }

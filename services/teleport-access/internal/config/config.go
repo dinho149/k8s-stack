@@ -1,0 +1,147 @@
+// Package config holds runtime configuration for teleport-access (env TA_* with optional YAML file).
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"sigs.k8s.io/yaml"
+)
+
+// Config is shared by the mcp and broker subcommands.
+type Config struct {
+	Teleport TeleportConfig `json:"teleport"`
+	MCP      MCPConfig      `json:"mcp"`
+	Broker   BrokerConfig   `json:"broker"`
+	LogLevel string         `json:"log_level"`
+	LogText  bool           `json:"log_text"`
+}
+
+// TeleportConfig says how to reach the cluster.
+type TeleportConfig struct {
+	// Addr of the auth or proxy service, e.g. teleport-cluster-auth.teleport.svc.cluster.local:3025
+	Addr string `json:"addr"`
+	// IdentityFile written by tbot (preferred). Empty => use the local tsh profile (dev only).
+	IdentityFile string `json:"identity_file"`
+	// Insecure skips proxy TLS verification (local kind only).
+	Insecure bool `json:"insecure"`
+	// Edition: community | enterprise
+	Edition string `json:"edition"`
+}
+
+// MCPConfig configures the MCP server.
+type MCPConfig struct {
+	HTTPAddr    string `json:"http_addr"`    // ":8080"; empty => stdio only
+	SharedToken string `json:"shared_token"` // bearer token the agent presents
+	// StdioUser is the principal for stdio sessions (defaults to the identity's username).
+	StdioUser  string `json:"stdio_user"`
+	StdioEmail string `json:"stdio_email"`
+	// BrokerURL lets MCP tools show broker predictions (optional).
+	BrokerURL   string `json:"broker_url"`
+	BrokerToken string `json:"broker_token"`
+	PolicyFile  string `json:"policy_file"`
+}
+
+// BrokerConfig configures the access broker.
+type BrokerConfig struct {
+	HTTPAddr        string        `json:"http_addr"` // ":8081"
+	APIToken        string        `json:"api_token"`
+	PolicyFile      string        `json:"policy_file"`
+	Mode            string        `json:"mode"` // watch (default) | poll
+	PollInterval    time.Duration `json:"poll_interval"`
+	StateFile       string        `json:"state_file"`
+	AgentWebhookURL string        `json:"agent_webhook_url"`
+	WebhookSecret   string        `json:"webhook_secret"`
+	// Approvals: setstate (community default) | review (enterprise SubmitAccessReview) | native (disabled watcher)
+	Approvals string `json:"approvals"`
+}
+
+// Load reads TA_CONFIG_FILE (if set) then overlays TA_* environment variables.
+func Load() (*Config, error) {
+	c := &Config{
+		Teleport: TeleportConfig{Edition: "community"},
+		MCP:      MCPConfig{PolicyFile: "/etc/teleport-access/policy.yaml"},
+		Broker:   BrokerConfig{HTTPAddr: ":8081", PolicyFile: "/etc/teleport-access/policy.yaml", Mode: "watch", PollInterval: time.Minute, Approvals: "setstate"},
+		LogLevel: "info",
+	}
+	if f := os.Getenv("TA_CONFIG_FILE"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", f, err)
+		}
+		if err := yaml.Unmarshal(b, c); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", f, err)
+		}
+	}
+	str := func(k string, dst *string) {
+		if v, ok := os.LookupEnv(k); ok {
+			*dst = v
+		}
+	}
+	boolean := func(k string, dst *bool) {
+		if v, ok := os.LookupEnv(k); ok {
+			*dst, _ = strconv.ParseBool(v)
+		}
+	}
+	str("TA_TELEPORT_ADDR", &c.Teleport.Addr)
+	str("TA_TELEPORT_IDENTITY_FILE", &c.Teleport.IdentityFile)
+	boolean("TA_TELEPORT_INSECURE", &c.Teleport.Insecure)
+	str("TA_TELEPORT_EDITION", &c.Teleport.Edition)
+	str("TA_MCP_HTTP_ADDR", &c.MCP.HTTPAddr)
+	str("TA_MCP_SHARED_TOKEN", &c.MCP.SharedToken)
+	str("TA_MCP_STDIO_USER", &c.MCP.StdioUser)
+	str("TA_MCP_STDIO_EMAIL", &c.MCP.StdioEmail)
+	str("TA_MCP_BROKER_URL", &c.MCP.BrokerURL)
+	str("TA_MCP_BROKER_TOKEN", &c.MCP.BrokerToken)
+	str("TA_MCP_POLICY_FILE", &c.MCP.PolicyFile)
+	str("TA_BROKER_HTTP_ADDR", &c.Broker.HTTPAddr)
+	str("TA_BROKER_API_TOKEN", &c.Broker.APIToken)
+	str("TA_BROKER_POLICY_FILE", &c.Broker.PolicyFile)
+	str("TA_BROKER_MODE", &c.Broker.Mode)
+	str("TA_BROKER_STATE_FILE", &c.Broker.StateFile)
+	str("TA_BROKER_AGENT_WEBHOOK_URL", &c.Broker.AgentWebhookURL)
+	str("TA_BROKER_WEBHOOK_SECRET", &c.Broker.WebhookSecret)
+	str("TA_BROKER_APPROVALS", &c.Broker.Approvals)
+	if v := os.Getenv("TA_BROKER_POLL_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("TA_BROKER_POLL_INTERVAL: %w", err)
+		}
+		c.Broker.PollInterval = d
+	}
+	str("TA_LOG_LEVEL", &c.LogLevel)
+	boolean("TA_LOG_TEXT", &c.LogText)
+	return c, nil
+}
+
+// Validate checks the parts needed by the given subcommand.
+func (c *Config) Validate(sub string) error {
+	var errs []string
+	if c.Teleport.Addr == "" && c.Teleport.IdentityFile != "" {
+		errs = append(errs, "teleport.addr (TA_TELEPORT_ADDR) is required with an identity file")
+	}
+	if strings.Contains(sub, "mcp") && c.MCP.HTTPAddr != "" && c.MCP.SharedToken == "" {
+		errs = append(errs, "mcp.shared_token (TA_MCP_SHARED_TOKEN) is required when serving HTTP")
+	}
+	if strings.Contains(sub, "broker") {
+		if c.Broker.APIToken == "" {
+			errs = append(errs, "broker.api_token (TA_BROKER_API_TOKEN) is required")
+		}
+		if c.Broker.Mode != "watch" && c.Broker.Mode != "poll" {
+			errs = append(errs, "broker.mode must be watch|poll")
+		}
+		switch c.Broker.Approvals {
+		case "setstate", "review", "native":
+		default:
+			errs = append(errs, "broker.approvals must be setstate|review|native")
+		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
+	return nil
+}

@@ -1,0 +1,34 @@
+# Local development stack: kind cluster "teleport-local", proxy on https://teleport.127.0.0.1.nip.io:3080
+#
+# Everything not set here comes from src/config/platforms/kind.ts.
+# Secrets are added with:  pulumi config set --secret teleport:githubClientSecret <value>   (or: make github-sso)
+config:
+  teleport:env: local
+  teleport:platform: kind
+  teleport:kubeContext: kind-teleport-local
+  teleport:clusterName: teleport.127.0.0.1.nip.io
+  teleport:publicAddr: teleport.127.0.0.1.nip.io:3080
+  teleport:version: "18.11.1"
+  teleport:edition: community
+  # GitHub SSO is the default login. Until an OAuth App is configured (make github-sso),
+  # auth.type=local keeps the stack deployable; `make github-sso` flips it to github.
+  teleport:auth:
+    type: local
+    secondFactors: [otp]
+    localAuth: true
+  teleport:users:
+    - name: admin
+      roles: [editor, access, auditor]
+      traits:
+        logins: [root, dev]
+    - name: alice
+      roles: [requester]
+      traits:
+        team: [app]
+        email: [alice@example.com]
+    - name: bob
+      roles: [requester, approver]
+      traits:
+        team: [platform]
+        email: [bob@example.com]
+encryptionsalt: v1:mzI5n4+jugk=:v1:rMDwujk21ft2k2FG:/BVPE972ndlygXKhZ1OHGw2ukiWaEA==

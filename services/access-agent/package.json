@@ -1,0 +1,35 @@
+{
+  "name": "@k8s-teleport/access-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Teleport access agent: Claude + MCP tools, exposed on Slack, Microsoft Teams, Google Chat and a CLI",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@slack/bolt": "^5.1.0",
+    "ajv": "^8.17.0",
+    "botbuilder": "^4.23.3",
+    "fastify": "^5.6.0",
+    "google-auth-library": "^10.0.0",
+    "googleapis": "^160.0.0",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

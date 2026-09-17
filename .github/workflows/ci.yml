@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  TELEPORT_VERSION: "18.11.1"
+  PULUMI_CONFIG_PASSPHRASE: ci-passphrase
+  NO_COLOR: "1"
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+      - run: npm ci --no-fund --no-audit
+      - name: Typecheck + unit tests (Pulumi, agent)
+        run: |
+          npm run typecheck --workspaces --if-present
+          npm test --workspaces --if-present
+      - name: Go vet + unit tests
+        run: |
+          go -C services/teleport-access vet ./...
+          go -C services/teleport-access test ./...
+          go -C tests/tools build ./...
+          go -C tests/integration vet -tags=integration ./...
+      - name: Secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: Shell syntax
+        run: for f in deploy/scripts/*.sh deploy/scripts/lib/*.sh tests/e2e/*.sh; do bash -n "$f"; done
+
+  preview-cloud-stacks:
+    runs-on: ubuntu-latest
+    needs: lint-and-unit
+    strategy:
+      matrix:
+        stack: [dev-eks, dev-gke, dev-aks, prod-eks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: pulumi/actions@v6
+        with: { command: version }
+      - uses: helm/kind-action@v1
+        with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
+      - run: npm ci --no-fund --no-audit
+      - name: pulumi preview (rendered against the kind context)
+        run: make preview STACK=${{ matrix.stack }} PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local"
+
+  kind-e2e:
+    runs-on: ubuntu-latest
+    needs: lint-and-unit
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+      - uses: pulumi/actions@v6
+        with: { command: version }
+      - uses: helm/kind-action@v1
+        with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
+      - run: npm ci --no-fund --no-audit
+      - name: Install tsh/tctl + expect
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq expect
+          make tsh
+      - name: Bring the stack up
+        run: make images deploy wait
+      - name: Seed test users
+        run: make seed-test-users
+      - name: Integration tests
+        run: make test-integration
+      - name: tsh end-to-end
+        run: make test-e2e
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl --context kind-teleport-local get pods -A
+          for ns in teleport teleport-agent teleport-dummies teleport-access; do kubectl --context kind-teleport-local -n $ns get events --sort-by=.lastTimestamp | tail -30; done
+          kubectl --context kind-teleport-local -n teleport logs deploy/teleport-cluster-operator --tail=100 || true
+          kubectl --context kind-teleport-local -n teleport-access logs deploy/access-broker --all-containers --tail=100 || true
+          tail -100 .logs/*.log || true

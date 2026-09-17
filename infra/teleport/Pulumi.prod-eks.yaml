@@ -1,0 +1,42 @@
+# prod-eks: Teleport on an EXISTING eks cluster reached through kubeContext.
+#
+# Scaffold: passes `make preview STACK=prod-eks` (optionally against the kind context with
+#   make preview STACK=prod-eks PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local")
+# Before a real deploy: set kubeContext, clusterName/publicAddr (a DNS name you control), a cert-manager
+# ClusterIssuer or ACME email, GitHub SSO secrets (make github-sso STACK=prod-eks), images.registry,
+# and chartMode (aws/gcp/azure) once the managed backends exist.
+config:
+  teleport:env: prod
+  teleport:platform: eks
+  teleport:kubeContext: kind-teleport-local
+  teleport:clusterName: teleport.example.com
+  teleport:publicAddr: teleport.example.com:443
+  teleport:version: "18.11.1"
+  teleport:edition: community
+  teleport:auth:
+    type: local # switch to github with: make github-sso STACK=prod-eks
+    secondFactors: [webauthn, otp]
+    localAuth: true
+  teleport:tls:
+    mode: cert-manager
+    issuerName: letsencrypt
+    issuerKind: ClusterIssuer
+  teleport:images:
+    registry: ghcr.io/CHANGE-ME/k8s-teleport
+    tag: latest
+    pullPolicy: Always
+  teleport:users:
+    - name: admin
+      roles: [editor, access, auditor, approver]
+      traits:
+        logins: [root, dev]
+  # teleport:chartMode:
+  #   mode: aws
+  #   region: eu-west-1
+  #   backendTable: teleport-backend
+  #   auditLogTable: teleport-audit
+  #   sessionRecordingBucket: teleport-sessions
+  #   serviceAccountRoleArn: arn:aws:iam::123456789012:role/teleport-cluster
+  teleport:dummies:
+    enabled: false
+encryptionsalt: v1:IbEW/EFeCz0=:v1:86w7PUYq7VV1Yyla:NfA6YEpneWUmlUcJlIpucrAlNkIveQ==
