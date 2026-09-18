@@ -35,4 +35,4 @@ Those checks need the installation's cloud profiles/projects, domains, chat regi
 
 ## Dependency status
 
-High/critical npm audit findings were resolved in the lockfile. Moderate upstream findings remain in Backstage's dependency graph (including Octokit, syntax highlighting, React Router, and UUID dependencies); see `npm audit`. Do not treat this repository as production-certified based on compilation alone.
+High/critical npm audit findings were resolved in the lockfile. Moderate upstream findings remain in Backstage's dependency graph (including Octokit, syntax highlighting, React Router, and UUID dependencies); see `make audit`. Do not treat this repository as production-certified based on compilation alone.

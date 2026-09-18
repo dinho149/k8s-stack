@@ -1,26 +1,19 @@
 SHELL := /bin/bash
-.PHONY: build lint test-fast test-scoped test ship-gate doctor local agent portal
-build:
-	go build -o bin/stack ./cmd/stack
-	npm run build
-lint:
-	@test -z "$$(gofmt -l cmd internal)" || (gofmt -l cmd internal; exit 1)
-	go vet ./cmd/... ./internal/...
-	npm run typecheck
-	for script in scripts/*.sh; do bash -n "$$script"; done
-	tofu fmt -check -recursive infra
-test-fast:
-	go test -race ./cmd/... ./internal/...
-	npm test
-test-scoped: test-fast
-test: lint test-fast
-	helm lint deploy/charts/sample deploy/charts/platform
-ship-gate: test build
-doctor:
-	go run ./cmd/stack doctor
-local:
-	go run ./cmd/stack up --bootstrap
-agent:
-	npm run agent
-portal:
-	npm run portal
+.DEFAULT_GOAL := help
+
+# Public interface: make <target> [KEY=value]. Helpers are implementation details.
+# Export only documented inputs; never interpolate user values into shell code.
+export NAME IMAGE REVISION MINUTES CONFIRMATION CONFIRM SERVICE
+export REPOSITORY TOOLS RUNS CONCURRENCY VERBOSE WITH_DEPS
+
+TARGETS := help help-all setup doctor up open status logs stop restart down reset clean \
+ local portal agent agent-stop sample-build preview-up preview-status preview-down \
+ preview-retry preview-extend preview-diagnostics build typecheck format format-check \
+ lint test-fast test-scoped test ship-gate test-portal test-agent test-local \
+ browser-install audit infra-validate catalog-check catalog-sync tool-routes \
+ benchmark benchmark-report test-isolation
+
+.PHONY: $(TARGETS)
+$(TARGETS):
+	@command -v python3 >/dev/null 2>&1 || { printf 'Python 3.9+ is required. See README.md prerequisites.\n'; exit 1; }
+	@python3 scripts/local.py $@

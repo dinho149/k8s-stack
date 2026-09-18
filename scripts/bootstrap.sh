@@ -26,5 +26,5 @@ else
 fi
 k apply -f "$ROOT/deploy/argocd-projects.yaml"
 printf '{"provider":"%s","hostMode":"%s","clusterSeconds":%s,"platformSeconds":%s,"measuredAt":"%s"}\n' "$STACK_PROVIDER" "$mode" "$((cluster_ready-started))" "$(($(date +%s)-started))" "$(date -u +%FT%TZ)" > "$ROOT/.stack/bootstrap-timing.json"
-echo "Base platform ready. Install selected catalog components with scripts/catalog-sync.sh."
+echo "Base platform ready. Install selected catalog components with make catalog-sync REPOSITORY=https://your-repository.git."
 cat "$ROOT/.stack/bootstrap-timing.json"
