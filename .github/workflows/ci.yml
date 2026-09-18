@@ -197,7 +197,7 @@ jobs:
           quiet: true
           output_format: sarif
       - if: always()
-        run: '[ -f results.sarif ] && mv results.sarif checkov-k8s.sarif || true'
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-k8s.sarif; fi
       - name: checkov (Dockerfiles)
         uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
@@ -207,7 +207,7 @@ jobs:
           quiet: true
           output_format: sarif
       - if: always()
-        run: '[ -f results.sarif ] && mv results.sarif checkov-dockerfile.sarif || true'
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-dockerfile.sarif; fi
       - name: checkov (GitHub workflows)
         uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
@@ -216,7 +216,7 @@ jobs:
           quiet: true
           output_format: sarif
       - if: always()
-        run: '[ -f results.sarif ] && mv results.sarif checkov-workflows.sarif || true'
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-workflows.sarif; fi
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && hashFiles('checkov-k8s.sarif') != ''
         continue-on-error: true
