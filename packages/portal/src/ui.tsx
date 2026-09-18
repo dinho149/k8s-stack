@@ -74,6 +74,18 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
       </>
     ),
+    key: (
+      <>
+        <circle cx="8" cy="15" r="4" />
+        <path d="m11 12 9-9m-3 3 3 3m-6 0 2 2" />
+      </>
+    ),
+    copy: (
+      <>
+        <rect x="9" y="9" width="11" height="11" rx="2" />
+        <path d="M5 15V5a1 1 0 0 1 1-1h10" />
+      </>
+    ),
   };
   return (
     <svg

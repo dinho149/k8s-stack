@@ -6,7 +6,7 @@ SHELL := /bin/bash
 export NAME IMAGE REVISION MINUTES CONFIRMATION CONFIRM SERVICE
 export REPOSITORY TOOLS RUNS CONCURRENCY VERBOSE WITH_DEPS
 # Teleport targets (make teleport-*): documented inputs only, forwarded to deploy/teleport/scripts.
-export STACK USER_NAME ID REASON ARGS SVC AS AGENT_ARGS USERS LOCAL_TLS WEB_LOGIN IMAGE_TAG PULUMI_ARGS TELEPORT CI_PREVIEW TSH_RELOGIN
+export STACK USER_NAME ID REASON ARGS SVC AS AGENT_ARGS USERS LOCAL_TLS WEB_LOGIN IMAGE_TAG PULUMI_ARGS TELEPORT CI_PREVIEW TSH_RELOGIN PORTAL_FORWARD TELEPORT_LOCAL_SUBJECT
 
 TARGETS := help help-all setup doctor up open status logs stop restart down reset clean \
  local portal agent agent-stop sample-build preview-up preview-status preview-down \
@@ -18,7 +18,7 @@ TARGETS := help help-all setup doctor up open status logs stop restart down rese
  teleport-login teleport-web-login teleport-tctl teleport-requests teleport-approve teleport-deny teleport-agent-cli \
  teleport-logs teleport-port-forward teleport-tls teleport-github-sso teleport-claude-token teleport-tsh teleport-images \
  teleport-bootstrap-users teleport-bootstrap-admin teleport-seed-test-users teleport-render teleport-test \
- teleport-test-integration teleport-test-e2e teleport-hooks teleport-secrets-guard teleport-wait
+ teleport-test-integration teleport-test-e2e teleport-hooks teleport-secrets-guard teleport-wait teleport-portal-forward
 
 .PHONY: $(TARGETS)
 $(TARGETS):

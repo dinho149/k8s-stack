@@ -24,6 +24,15 @@ platform:
   identities:
     - entityRef: user:development/guest
       subject: local-developer
+# Teleport access pages (make teleport-portal-forward writes .dogfood/teleport-portal.env with the URL + token).
+# The guest account maps to TELEPORT_LOCAL_SUBJECT (default local-developer -> alice in the cluster's identity
+# map); TELEPORT_LOCAL_SUBJECT=bob make restart switches the demo identity to the approver.
+teleport:
+  portalUrl: ${TELEPORT_PORTAL_URL}
+  serviceToken: ${TELEPORT_SERVICE_TOKEN}
+  identities:
+    - entityRef: user:development/guest
+      subject: ${TELEPORT_LOCAL_SUBJECT}
 catalog:
   rules:
     - allow: [Component, System, API, Resource, Location, Template, User, Group]

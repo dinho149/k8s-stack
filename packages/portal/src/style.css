@@ -2115,3 +2115,146 @@ summary {
 .chat-messages.chat-empty {
   max-height: none;
 }
+
+/* ---- Access (Teleport just-in-time access) ---- */
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 25px;
+}
+.subnav a {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.subnav a:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+.subnav a.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.status-approved,
+.status-auto-approve,
+.status-active {
+  background: var(--green-soft);
+  color: var(--green);
+  border-color: transparent;
+}
+.status-denied,
+.status-deny,
+.status-expired {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: transparent;
+}
+.status-require-approval,
+.status-promoted {
+  background: var(--amber-soft);
+  color: var(--amber);
+  border-color: transparent;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: 'IBM Plex Mono', monospace;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+.command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+}
+.command code {
+  flex: 1;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.command .icon-button {
+  flex-shrink: 0;
+}
+.role-options {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 20px;
+}
+.role-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.role-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.role-option small {
+  display: block;
+  color: var(--muted);
+}
+.grant-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+  margin-bottom: 25px;
+}
+.grant-card {
+  padding: 22px 25px;
+}
+.grant-card h2 {
+  font-size: 15px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.grant-card p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.review-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.review-list li {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.review-list small {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+}
+@media (max-width: 760px) {
+  .grant-list {
+    grid-template-columns: 1fr;
+  }
+}

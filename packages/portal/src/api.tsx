@@ -51,8 +51,12 @@ export function createClient(baseUrl: () => Promise<string>, fetcher: typeof fet
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = await response.json().catch(() => null);
-    if (!response.ok)
-      throw new Error(data?.error ?? `Request failed (${response.status}). Try again.`);
+    if (!response.ok) {
+      const error = new Error(data?.error ?? `Request failed (${response.status}). Try again.`);
+      (error as Error & { status?: number; code?: string }).status = response.status;
+      (error as Error & { status?: number; code?: string }).code = data?.code;
+      throw error;
+    }
     return data as T;
   };
 }

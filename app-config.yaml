@@ -26,6 +26,16 @@ auth:
         signIn:
           resolvers:
             - resolver: emailMatchingUserEntityProfileEmail
+    # GitHub sign-in (VITE_AUTH_PROVIDER=github in the portal): the user entity name is the GitHub login, which is
+    # also the Teleport username. Only users present in the catalog may sign in (ingest the organization with the
+    # github-org catalog module); dangerouslyAllowSignInWithoutUserInCatalog stays off.
+    github:
+      development:
+        clientId: ${AUTH_GITHUB_CLIENT_ID}
+        clientSecret: ${AUTH_GITHUB_CLIENT_SECRET}
+        signIn:
+          resolvers:
+            - resolver: usernameMatchingUserEntityName
 platform:
   apiUrl: ${DOGFOOD_API_URL}
   agentUrl: http://localhost:8090
@@ -33,6 +43,12 @@ platform:
   identities:
     - entityRef: user:default/guest
       subject: local-developer
+# Teleport access pages: the access portal API (teleport-access portal) inside the cluster. With GitHub sign-in the
+# entity name is the GitHub login == Teleport username, so no per-user list is needed.
+teleport:
+  portalUrl: ${TELEPORT_PORTAL_URL}
+  serviceToken: ${TELEPORT_SERVICE_TOKEN}
+  subjectFromEntityName: true
 catalog:
   rules:
     - allow: [Component, System, API, Resource, Location, Template, User, Group]

@@ -20,6 +20,8 @@ import '@fontsource/nunito-sans/latin-900.css';
 import './style.css';
 
 const local = import.meta.env.VITE_LOCAL_DEVELOPMENT === 'true';
+// oidc (Keycloak) or github: the GitHub login is also the Teleport username for the Access pages.
+const provider = import.meta.env.VITE_AUTH_PROVIDER === 'github' ? 'github' : 'oidc';
 const app = createApp({
   apis: [
     createApiFactory({
@@ -45,12 +47,12 @@ const app = createApp({
       data: {
         app: { title: 'Dogfood', baseUrl: window.location.origin },
         backend: { baseUrl: import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:7007' },
-        auth: { environment: 'development', providers: local ? { guest: {} } : { oidc: {} } },
+        auth: { environment: 'development', providers: local ? { guest: {} } : { [provider]: {} } },
       },
     },
   ],
   components: {
-    SignInPage: (props) => <DogfoodSignIn {...props} local={local} />,
+    SignInPage: (props) => <DogfoodSignIn {...props} local={local} provider={provider} />,
   },
 });
 const Router = app.getRouter();

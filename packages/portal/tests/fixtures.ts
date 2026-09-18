@@ -1,5 +1,99 @@
 import { Page } from '@playwright/test';
 export const digest = 'ghcr.io/team/app@sha256:' + 'a'.repeat(64);
+
+// ---- Teleport access fixtures
+export type AccessRequestFixture = {
+  id: string;
+  user: string;
+  roles: string[];
+  reason: string;
+  state: string;
+  created: string;
+  expires: string;
+  reviews_detail?: { author: string; state: string; reason: string; created: string }[];
+  annotations?: Record<string, string[]>;
+  tsh_login_command?: string;
+  tsh_status_command?: string;
+};
+export const roleCatalog = [
+  {
+    name: 'requester',
+    description: 'Request catalog roles',
+    can_request_roles: ['dev-ssh', 'prod-ssh'],
+  },
+  {
+    name: 'dev-ssh',
+    description: "SSH as 'dev' on local/dev servers",
+    node_labels: { env: ['local', 'dev'] },
+    logins: ['dev'],
+    max_session_ttl: '4h0m0s',
+  },
+  {
+    name: 'prod-ssh',
+    description: "SSH as 'dev' on production servers",
+    node_labels: { env: ['prod'] },
+    logins: ['dev'],
+    max_session_ttl: '2h0m0s',
+  },
+  { name: 'editor', description: 'Teleport editor' },
+];
+export const requestableRoles = [
+  {
+    role: 'dev-ssh',
+    description: "SSH as 'dev' on local/dev servers",
+    prediction: 'auto_approve',
+    rule: 'auto-approve-low-risk',
+    approver_roles: [],
+    ttl_cap: '4h0m0s',
+  },
+  {
+    role: 'prod-ssh',
+    description: "SSH as 'dev' on production servers",
+    prediction: 'require_approval',
+    rule: 'high-risk-needs-approval',
+    approver_roles: ['approver'],
+    ttl_cap: '1h0m0s',
+  },
+];
+export const alice = {
+  user: 'alice',
+  email: 'alice@example.test',
+  roles: ['requester'],
+  traits: { email: ['alice@example.test'] },
+  active_elevated_roles: { 'dev-ssh': '2030-09-18T22:00:00Z' },
+  is_approver: false,
+  effective_access: [roleCatalog[0], roleCatalog[1]],
+  note: 'Roles without label selectors grant no infrastructure access.',
+};
+export const bob = {
+  ...alice,
+  user: 'bob',
+  email: 'bob@example.test',
+  roles: ['requester', 'approver'],
+  is_approver: true,
+  active_elevated_roles: {},
+};
+export const approvedRequest: AccessRequestFixture = {
+  id: 'a11ce000-1111-2222-3333-444444444444',
+  user: 'alice',
+  roles: ['dev-ssh'],
+  reason: 'poking around the dev boxes',
+  state: 'APPROVED',
+  created: '2026-09-18T18:00:00Z',
+  expires: '2030-09-18T22:00:00Z',
+  annotations: { 'access-broker/mode': ['auto'], 'access-broker/rule': ['auto-approve-low-risk'] },
+  tsh_login_command: 'tsh login --request-id=a11ce000-1111-2222-3333-444444444444',
+  tsh_status_command: 'tsh request show a11ce000-1111-2222-3333-444444444444',
+};
+export const pendingRequest: AccessRequestFixture = {
+  id: 'b0b00000-1111-2222-3333-444444444444',
+  user: 'alice',
+  roles: ['prod-ssh'],
+  reason: 'incident 123 needs a look at prod',
+  state: 'PENDING',
+  created: '2026-09-18T19:00:00Z',
+  expires: '2030-09-18T21:00:00Z',
+};
 export const environment = {
   id: 'pr-checkout-42',
   owner: 'dinho',
@@ -55,6 +149,16 @@ export async function mockPlatform(page: Page, empty = false) {
     failCreate: false,
     failAgent: false,
     failDestroy: false,
+    // Teleport access pages (proxied to the access portal API as /access/*)
+    access: {
+      configured: true,
+      me: structuredClone(alice),
+      failApprove: '' as '' | 'self_approval' | 'not_pending',
+      requests: [
+        structuredClone(approvedRequest),
+        structuredClone(pendingRequest),
+      ] as AccessRequestFixture[],
+    },
   };
   await page.route('http://127.0.0.1:4707/**', async (route) => {
     const req = route.request(),
@@ -147,6 +251,167 @@ export async function mockPlatform(page: Page, empty = false) {
           status: 'installed',
         },
       ]);
+    if (path.startsWith('/access/')) {
+      const rest = path.slice('/access'.length);
+      const access = state.access;
+      if (!access.configured)
+        return respond({ error: 'Teleport access is not configured', code: 'not_configured' }, 503);
+      if (rest === '/me') return respond(access.me);
+      if (rest === '/cluster')
+        return respond({
+          cluster_name: 'teleport.example.test',
+          teleport_version: '18.11.1',
+          edition: 'community',
+          approval_model: 'Community Edition: the access broker decides.',
+        });
+      if (rest === '/roles') return respond({ roles: roleCatalog });
+      if (rest.startsWith('/roles/')) {
+        const name = decodeURIComponent(rest.slice('/roles/'.length));
+        const role = roleCatalog.find((r) => r.name === name);
+        if (!role) return respond({ error: `role ${name} not found`, code: 'not_found' }, 404);
+        const rr = requestableRoles.find((r) => r.role === name);
+        return respond({
+          role,
+          deny: {},
+          kubernetes_resources: [],
+          requestable: Boolean(rr),
+          prediction: rr,
+        });
+      }
+      if (rest === '/requestable-roles')
+        return respond({
+          requestable_roles: requestableRoles,
+          suggested_reviewers: [],
+          require_reason: true,
+        });
+      if (rest === '/approvers')
+        return respond({
+          role: 'prod-ssh',
+          policy_action: 'require_approval',
+          policy_rule: 'high-risk-needs-approval',
+          approver_roles: ['approver'],
+          approvers: ['bob'],
+          suggested_reviewers: [],
+          how: 'Approvers click Approve.',
+        });
+      if (rest === '/requests/preview' && method === 'POST') {
+        const deny = body.roles.includes('editor');
+        return respond({
+          created: false,
+          dry_run: true,
+          request: { ...pendingRequest, roles: body.roles, reason: body.reason },
+          prediction: {
+            action: deny
+              ? 'deny'
+              : body.roles.some((r: string) => r.startsWith('prod-'))
+                ? 'require_approval'
+                : 'auto_approve',
+            rule: 'rule',
+            reason: '',
+            ttl_cap: '1h0m0s',
+            approvers: ['approver'],
+          },
+          tsh_command: `tsh request create --roles ${body.roles.join(',')} --max-duration 1h --reason "${body.reason}"`,
+          ...(body.ttl === '4h' ? { ttl_clamped_from: '4h0m0s', ttl: '1h0m0s' } : {}),
+        });
+      }
+      if (rest === '/requests' && method === 'POST') {
+        if (state.failCreate)
+          return respond(
+            {
+              error: 'too many access requests created recently; try again later',
+              code: 'rate_limited',
+            },
+            429,
+          );
+        const auto = !body.roles.some((r: string) => r.startsWith('prod-'));
+        const created: AccessRequestFixture = {
+          ...pendingRequest,
+          id: 'c0ffee00-1111-2222-3333-444444444444',
+          roles: body.roles,
+          reason: body.reason,
+          state: auto ? 'APPROVED' : 'PENDING',
+          ...(auto
+            ? { tsh_login_command: 'tsh login --request-id=c0ffee00-1111-2222-3333-444444444444' }
+            : {}),
+        };
+        access.requests.push(created);
+        return respond(
+          {
+            created: true,
+            request: created,
+            prediction: {
+              action: auto ? 'auto_approve' : 'require_approval',
+              rule: 'rule',
+              reason: '',
+              ttl_cap: '1h0m0s',
+              approvers: [],
+            },
+            tsh_command: 'tsh request create ...',
+            note: 'pending',
+          },
+          201,
+        );
+      }
+      if (rest === '/requests' && method === 'GET') {
+        const want = new URL(req.url()).searchParams.get('state');
+        return respond({
+          requests: access.requests.filter(
+            (r) => r.user === access.me.user && (!want || r.state.toLowerCase() === want),
+          ),
+        });
+      }
+      if (rest === '/approvals')
+        return access.me.is_approver
+          ? respond({
+              requests: access.requests.filter(
+                (r) => r.state === 'PENDING' && r.user !== access.me.user,
+              ),
+            })
+          : respond(
+              {
+                error: "only approvers can list other users' pending requests",
+                code: 'teleport_denied',
+              },
+              403,
+            );
+      const decide = /^\/requests\/([^/]+)\/(approve|deny)$/.exec(rest);
+      if (decide && method === 'POST') {
+        if (access.failApprove)
+          return respond(
+            {
+              error:
+                access.failApprove === 'self_approval'
+                  ? 'requester cannot decide their own request'
+                  : 'request is not pending',
+              code: access.failApprove,
+            },
+            access.failApprove === 'self_approval' ? 403 : 409,
+          );
+        const r = access.requests.find((x) => x.id === decide[1])!;
+        r.state = decide[2] === 'approve' ? 'APPROVED' : 'DENIED';
+        r.reviews_detail = [
+          {
+            author: access.me.user,
+            state: r.state,
+            reason: body.reason,
+            created: '2026-09-18T20:00:00Z',
+          },
+        ];
+        if (r.state === 'APPROVED') r.tsh_login_command = `tsh login --request-id=${r.id}`;
+        return respond(r);
+      }
+      const one = /^\/requests\/([^/]+)$/.exec(rest);
+      if (one) {
+        const r = access.requests.find(
+          (x) => x.id === one[1] && (x.user === access.me.user || access.me.is_approver),
+        );
+        return r
+          ? respond(r)
+          : respond({ error: `no access request ${one[1]}`, code: 'not_found' }, 404);
+      }
+      return respond({ error: `Unmocked access endpoint: ${rest}`, code: 'not_found' }, 404);
+    }
     if (path === '/policies')
       return respond({
         role: 'developer',

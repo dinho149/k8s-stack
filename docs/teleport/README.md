@@ -24,7 +24,8 @@ make teleport-login     # tsh login with no prompts (GitHub SSO once configured)
 make teleport-status    # dashboard: pods, Teleport inventory, pending requests, your session
 ```
 
-Read [local.md](local.md) to get started, [architecture.md](architecture.md) for the design,
+Read [local.md](local.md) to get started, [portal.md](portal.md) for the Access pages in the Dogfood portal,
+[architecture.md](architecture.md) for the design,
 [access-model.md](access-model.md) for the zero-standing-privilege model and [migration.md](migration.md) if you
 used the standalone `k8s-teleport` repository before.
 
