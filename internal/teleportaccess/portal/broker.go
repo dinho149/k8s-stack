@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -72,14 +73,17 @@ func (c *BrokerClient) Decide(ctx context.Context, id string, approve bool, by A
 		verb = "approve"
 	}
 	body, _ := json.Marshal(map[string]string{"reason": reason})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/v1/requests/%s/%s", c.URL, id, verb), bytes.NewReader(body))
+	// The host is operator configuration (TA_PORTAL_BROKER_URL); the only client-influenced part is the
+	// request id, which is path-escaped, so the target can never leave the broker's /v1/requests tree.
+	target := fmt.Sprintf("%s/v1/requests/%s/%s", c.URL, url.PathEscape(id), verb)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body)) //nolint:gosec // see above
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set(assertion.Header, hdr)
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.HTTP.Do(req) //nolint:gosec // operator-configured broker URL, escaped id (see above)
 	if err != nil {
 		return &BrokerError{Status: http.StatusBadGateway, Code: "broker_unavailable", Message: "the access broker did not answer"}
 	}
