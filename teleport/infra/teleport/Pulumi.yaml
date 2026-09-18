@@ -1,0 +1,14 @@
+name: teleport
+description: Teleport cluster on Kubernetes (kind locally, EKS/GKE/AKS in the cloud) with zero-standing-privilege access model
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+    packagemanager: npm
+main: index.ts
+config:
+  # Every setting lives under the `teleport:` namespace; see src/config/schema.ts for the schema
+  # and Pulumi.<stack>.yaml for per-environment values.
+  pulumi:tags:
+    value:
+      project: k8s-teleport

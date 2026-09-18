@@ -1,0 +1,77 @@
+name: claude-security-review
+
+# Anthropic's security reviewer on every same-repo pull request. Fork PRs are skipped: they cannot read
+# ANTHROPIC_API_KEY and must not run with any write permission. Required repo secret: ANTHROPIC_API_KEY.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    # `secrets` cannot be read in a job-level `if`, so expose its presence as an output: without the key the
+    # review is skipped (neutral), not failed. Add the ANTHROPIC_API_KEY repository secret to turn it on.
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      has_key: ${{ steps.check.outputs.has_key }}
+    steps:
+      - id: check
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+  claude-security-review:
+    name: claude-security-review
+    needs: preflight
+    if: needs.preflight.outputs.has_key == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      # The upstream repository publishes no tags; pinned to the main commit reviewed on 2026-09-17.
+      - name: Claude security review
+        id: review
+        uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda # main 2026-02-11
+        with:
+          claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          comment-pr: true
+          upload-results: true
+          exclude-directories: node_modules,dist,tests/policy/rendered,infra/.state
+          custom-security-scan-instructions: .github/claude-security-focus.md
+      - name: Fail on HIGH/CRITICAL findings
+        env:
+          COUNT: ${{ steps.review.outputs.findings-count }}
+          RESULTS: ${{ steps.review.outputs.results-file }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          count = int(os.environ.get("COUNT") or 0)
+          path = os.environ.get("RESULTS") or ""
+          high = []
+          if path and os.path.exists(path):
+              data = json.load(open(path))
+              findings = data.get("findings", data) if isinstance(data, dict) else data
+              for f in findings if isinstance(findings, list) else []:
+                  sev = str(f.get("severity", "")).upper()
+                  if sev in ("HIGH", "CRITICAL"):
+                      high.append(f"{sev}: {f.get('file', '?')}:{f.get('line', '?')} {f.get('description', f.get('title', ''))[:120]}")
+          print(f"findings: {count}, high/critical: {len(high)}")
+          for h in high:
+              print("  -", h)
+          if high or (count > 0 and not path):
+              print("::error::security review found high-severity issues (see the PR comment)")
+              sys.exit(1)
+          PY

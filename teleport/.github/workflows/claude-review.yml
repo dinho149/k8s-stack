@@ -1,0 +1,96 @@
+name: claude-review
+
+# General Claude review focused on the access model. Same-repo PRs only (fork PRs cannot read the API key).
+# Required repo secret: ANTHROPIC_API_KEY. The job fails when Claude's verdict is SECURITY-REVIEW: FAIL.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    # `secrets` cannot be read in a job-level `if`, so expose its presence as an output: without the key the
+    # review is skipped (neutral), not failed. Add the ANTHROPIC_API_KEY repository secret to turn it on.
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      has_key: ${{ steps.check.outputs.has_key }}
+    steps:
+      - id: check
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
+  claude-review:
+    name: claude-review
+    needs: preflight
+    if: needs.preflight.outputs.has_key == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Claude access-model review
+        uses: anthropics/claude-code-action@3b8197d3d486006dd4af54613517f21ac6ac625e # v1.0.227
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true
+          # Read-only repository tools plus the gh calls needed to read the diff and post ONE comment.
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Grep,Glob,LS,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(git diff:*),Bash(git log:*)"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are reviewing a pull request against a Teleport privileged-access platform. Read
+            docs/access-model.md first: it defines the zero-standing-privilege model (humans hold `requester`,
+            the broker auto-approves only when EVERY requested role is low-risk, approvers act through signed
+            identity assertions, bots are least-privilege, the chat agent has no approve tool).
+
+            Get the diff with `gh pr diff ${{ github.event.pull_request.number }}` and read surrounding code as needed.
+            Review specifically, in this order, for:
+            1. Privilege escalation: any change that lets a request, role, bot, user or team gain `editor`, `access`,
+               `system:masters`, wildcard `db_users`, root logins, or auto-approval of a non-low-risk role.
+               Focus: infra/teleport/src/policy, services/teleport-access/internal/policy, internal/broker.
+            2. Identity binding: any place identity comes from a caller-controlled header/body/chat payload instead
+               of the signed X-Teleport-Assertion; approver checks not bound to Teleport user traits; self-approval.
+               Focus: services/teleport-access/internal/mcp, internal/broker, services/access-agent/src/identity,
+               src/adapters, src/notifications.
+            3. Policy bypass: mixed-tier requests, TTL caps, deny rules, unanchored patterns, resource-scoped
+               requests, hidden roles, rate limits.
+            4. Secret handling: secrets on argv, in logs, in child-process env, in world-readable files, in images,
+               or in CI artifacts; TLS verification disabled outside the guarded kind-only path.
+
+            Post exactly one review comment with `gh pr comment` containing:
+            - A short summary of what the PR changes.
+            - Findings grouped by the four categories above, each with file:line, impact and a concrete fix.
+              Say "none found" for a category with no findings.
+            - The final line must be exactly `SECURITY-REVIEW: PASS` or `SECURITY-REVIEW: FAIL`
+              (FAIL when any finding in categories 1-3 is real, or a category-4 finding exposes a credential).
+            Do not modify files, do not push, do not approve or request changes on the PR.
+
+      - name: Enforce verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          verdict="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate --jq '.[].body' \
+            | grep -oE 'SECURITY-REVIEW: (PASS|FAIL)' | tail -1 || true)"
+          echo "verdict: ${verdict:-none}"
+          case "$verdict" in
+            "SECURITY-REVIEW: PASS") exit 0;;
+            "SECURITY-REVIEW: FAIL") echo "::error::Claude review verdict FAIL (see the PR comment)"; exit 1;;
+            *) echo "::error::no SECURITY-REVIEW verdict found in PR comments"; exit 1;;
+          esac

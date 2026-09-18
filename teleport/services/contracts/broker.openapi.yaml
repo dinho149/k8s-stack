@@ -1,0 +1,134 @@
+openapi: 3.1.0
+info:
+  title: access-broker API
+  version: "2"
+  description: |
+    HTTP API of the Teleport access broker (services/teleport-access, `broker` subcommand).
+    Consumed by the chat agent (services/access-agent).
+
+    Authentication:
+    * Every /v1 route requires `Authorization: Bearer <TA_BROKER_API_TOKEN>` (proves the caller is the agent process).
+    * `POST /v1/requests/{id}/approve|deny` additionally require `X-Teleport-Assertion`, a signed per-turn identity
+      assertion (see `components.securitySchemes.identityAssertion`). The approver identity comes ONLY from the
+      assertion; the request body carries a reason and nothing else (unknown fields are rejected with 400).
+
+    Identity assertion format (shared with services/access-agent/src/identity/assertion.ts):
+    `X-Teleport-Assertion: <b64url(payloadJSON)>.<b64url(HMAC-SHA256(TA_IDENTITY_SIGNING_KEY, b64url(payloadJSON)))>`
+    base64url without padding; the HMAC input is the base64url payload string. Payload fields: `sub` (Teleport
+    username, required, <= 255 chars), `email`, `platform` (slack|teams|gchat|cli), `platform_user_id`,
+    `aud` ("broker" here, "mcp" for the MCP server), `iat`, `exp` (unix seconds, exp-iat <= 60, iat at most 30s in
+    the future), `jti` (UUID, single use for 5 minutes). Failures answer 401.
+
+    Limits: JSON bodies are capped at 64 KiB; /v1 is rate limited (50 req/s, burst 100 -> 429).
+
+    The broker also POSTs events to the agent (see `components.schemas.Event`), signed with
+    `X-Broker-Signature: sha256=HMAC-SHA256(secret, "<X-Broker-Timestamp>.<body>")` and deduplicated by `X-Broker-Event-Id`.
+security:
+  - bearer: []
+paths:
+  /healthz: { get: { security: [], responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } } } } }
+  /readyz: { get: { security: [], responses: { "200": { description: ready, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }, "503": { description: not ready (no error detail is returned), content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } } } } }
+  /v1/requests:
+    get:
+      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, approved, denied, all], default: pending } }]
+      responses: { "200": { description: list, content: { application/json: { schema: { type: object, properties: { requests: { type: array, items: { $ref: "#/components/schemas/Request" } } } } } } }, "401": { $ref: "#/components/responses/Error" }, "429": { $ref: "#/components/responses/Error" } }
+  /v1/requests/{id}:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string }, description: full id or unique prefix }]
+      responses: { "200": { description: request, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "404": { $ref: "#/components/responses/Error" } }
+  /v1/requests/{id}/approve:
+    post:
+      security: [{ bearer: [], identityAssertion: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses:
+        "200": { description: approved, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }
+        "400": { description: "bad_json (unknown field such as `approver`, malformed or oversized body) | bad_reason", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: "missing or invalid bearer token or identity assertion (bad signature, wrong audience, expired, replayed)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: "self_approval | not_approver | teleport_denied", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: not_pending, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /v1/requests/{id}/deny:
+    post:
+      security: [{ bearer: [], identityAssertion: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses: { "200": { description: denied, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "400": { $ref: "#/components/responses/Error" }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } }
+  /v1/policy/evaluate:
+    post:
+      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, properties: { requester: { type: string }, roles: { type: array, maxItems: 50, items: { type: string } }, ttl: { type: string } } } } } }
+      responses: { "200": { description: decision, content: { application/json: { schema: { $ref: "#/components/schemas/PolicyDecision" } } } }, "400": { $ref: "#/components/responses/Error" } }
+  /v1/approvers:
+    get:
+      parameters: [{ name: role, in: query, schema: { type: string } }]
+      responses: { "200": { description: approvers, content: { application/json: { schema: { type: object, properties: { approver_roles: { type: array, items: { type: string } }, emails: { type: array, items: { type: string } } } } } } } }
+  /v1/users/by-email:
+    get:
+      parameters: [{ name: email, in: query, required: true, schema: { type: string, maxLength: 320 } }]
+      responses: { "200": { description: "{} when unknown", content: { application/json: { schema: { type: object, properties: { user: { type: string } } } } } }, "400": { $ref: "#/components/responses/Error" } }
+  /v1/users/{user}/roles:
+    get:
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: roles (traits are not exposed), content: { application/json: { schema: { type: object, properties: { roles: { type: array, items: { type: string } } } } } } }, "404": { $ref: "#/components/responses/Error" } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, description: "TA_BROKER_API_TOKEN (>= 32 bytes)" }
+    identityAssertion:
+      type: apiKey
+      in: header
+      name: X-Teleport-Assertion
+      description: "Signed per-turn identity assertion with aud=broker (see info.description). Required on approve/deny."
+  responses:
+    Error: { description: error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Status: { type: object, required: [status], properties: { status: { type: string, enum: [ok, not-ready] } } }
+    Error: { type: object, required: [error, code], properties: { error: { type: string }, code: { type: string } } }
+    IdentityAssertionPayload:
+      type: object
+      description: JSON payload inside X-Teleport-Assertion (documentation only; it travels base64url-encoded in the header).
+      required: [sub, aud, iat, exp, jti]
+      properties:
+        sub: { type: string, maxLength: 255, description: Teleport username }
+        email: { type: string }
+        platform: { type: string, enum: [slack, teams, gchat, cli] }
+        platform_user_id: { type: string }
+        aud: { type: string, enum: [mcp, broker] }
+        iat: { type: integer, description: unix seconds }
+        exp: { type: integer, description: "unix seconds; exp - iat <= 60" }
+        jti: { type: string, format: uuid, description: single use within 5 minutes }
+    Decision:
+      type: object
+      additionalProperties: false
+      description: Approve/deny body. The approver is NOT part of the body; it is taken from the identity assertion.
+      properties: { reason: { type: string, maxLength: 1024 } }
+    PolicyDecision:
+      type: object
+      properties: { action: { type: string, enum: [auto_approve, require_approval, deny] }, rule: { type: string }, reason: { type: string }, ttl_cap: { type: string }, approvers: { type: object, properties: { teleport_roles: { type: array, items: { type: string } }, emails: { type: array, items: { type: string } } } } }
+    Resolution:
+      type: object
+      properties: { state: { type: string, enum: [approved, denied, expired] }, by: { type: string }, mode: { type: string, enum: [auto, chat, external] }, reason: { type: string } }
+    Request:
+      type: object
+      required: [id, user, roles, state, created, expires]
+      properties:
+        id: { type: string }
+        user: { type: string }
+        roles: { type: array, items: { type: string } }
+        resource_ids: { type: array, items: { type: string } }
+        reason: { type: string }
+        state: { type: string, enum: [PENDING, APPROVED, DENIED, PROMOTED] }
+        created: { type: string, format: date-time }
+        expires: { type: string, format: date-time }
+        access_expiry: { type: string, format: date-time }
+        decision: { $ref: "#/components/schemas/PolicyDecision" }
+        resolution: { $ref: "#/components/schemas/Resolution" }
+        reviews: { type: array, items: { type: object } }
+    Event:
+      type: object
+      required: [type, request]
+      properties:
+        type: { type: string, enum: [request.pending_review, request.resolved] }
+        request: { $ref: "#/components/schemas/Request" }
+        requester_email: { type: string }
+        notify: { type: object, properties: { channels: { type: array, items: { type: object, properties: { adapter: { type: string }, target: { type: string } } } }, mention_approvers: { type: boolean } } }
+        approver_emails: { type: array, items: { type: string } }
+        resolution: { $ref: "#/components/schemas/Resolution" }

@@ -1,0 +1,5 @@
+# Scripted conversation for tests/e2e/05_agent_cli.sh (one message per line; # comments ignored)
+What can I access right now? Answer briefly.
+What role do I need to reach postgres-prod, and would it be approved automatically?
+Create a new access request for the dev-ssh role for 1 hour now, even if I already hold it, without asking me to confirm. The reason is: e2e scripted test.
+What is the status of my most recent access request?

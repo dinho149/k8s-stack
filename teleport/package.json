@@ -1,0 +1,21 @@
+{
+  "name": "k8s-teleport",
+  "private": true,
+  "description": "Portable Teleport-on-Kubernetes scaffold: Pulumi IaC, zero-standing-privilege access broker, MCP server and multi-chat Claude agent",
+  "license": "MIT",
+  "workspaces": [
+    "infra/teleport",
+    "services/access-agent"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
