@@ -193,7 +193,7 @@ jobs:
       # The action's pinned checkov (2.0.x) accepts one framework per run and always writes ./results.sarif,
       # so: one step per framework, rename the report after each, upload each under its own category.
       - name: checkov (rendered Kubernetes manifests)
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
           directory: tests/policy/rendered
           framework: kubernetes
@@ -202,7 +202,7 @@ jobs:
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-k8s.sarif; fi
       - name: checkov (Dockerfiles)
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
           directory: .
           framework: dockerfile
@@ -212,7 +212,7 @@ jobs:
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-dockerfile.sarif; fi
       - name: checkov (GitHub workflows)
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
           directory: .github/workflows
           framework: github_actions
