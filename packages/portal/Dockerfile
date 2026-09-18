@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /workspace
 COPY package.json package-lock.json .npmrc ./
 COPY packages/portal/package.json packages/portal/package.json
