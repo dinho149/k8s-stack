@@ -8,6 +8,6 @@ ARG VITE_BACKEND_URL
 ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
 ENV VITE_LOCAL_DEVELOPMENT=false
 RUN npm run build --workspace @dogfood/portal
-FROM nginxinc/nginx-unprivileged:1.28.0-alpine
+FROM nginxinc/nginx-unprivileged:1.31.6-alpine
 COPY packages/portal/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/packages/portal/dist /usr/share/nginx/html
