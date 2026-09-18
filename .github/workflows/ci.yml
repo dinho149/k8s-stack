@@ -187,6 +187,8 @@ jobs:
       - run: npm ci --no-fund
       - name: Render manifests offline
         run: make render
+      # The action's pinned checkov (2.0.x) accepts one framework per run and always writes ./results.sarif,
+      # so: one step per framework, rename the report after each, upload each under its own category.
       - name: checkov (rendered Kubernetes manifests)
         uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
@@ -194,24 +196,39 @@ jobs:
           framework: kubernetes
           quiet: true
           output_format: sarif
-          output_file_path: checkov-k8s
-      - name: checkov (Dockerfiles + workflows)
+      - if: always()
+        run: '[ -f results.sarif ] && mv results.sarif checkov-k8s.sarif || true'
+      - name: checkov (Dockerfiles)
         uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
           directory: .
-          framework: dockerfile,github_actions
+          framework: dockerfile
           skip_path: node_modules,infra/.state,tests/.state,.logs
           quiet: true
           output_format: sarif
-          output_file_path: checkov-repo
+      - if: always()
+        run: '[ -f results.sarif ] && mv results.sarif checkov-dockerfile.sarif || true'
+      - name: checkov (GitHub workflows)
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        with:
+          directory: .github/workflows
+          framework: github_actions
+          quiet: true
+          output_format: sarif
+      - if: always()
+        run: '[ -f results.sarif ] && mv results.sarif checkov-workflows.sarif || true'
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
-        if: always() && hashFiles('checkov-k8s/results_sarif.sarif') != ''
+        if: always() && hashFiles('checkov-k8s.sarif') != ''
         continue-on-error: true
-        with: { sarif_file: checkov-k8s/results_sarif.sarif, category: checkov-kubernetes }
+        with: { sarif_file: checkov-k8s.sarif, category: checkov-kubernetes }
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
-        if: always() && hashFiles('checkov-repo/results_sarif.sarif') != ''
+        if: always() && hashFiles('checkov-dockerfile.sarif') != ''
         continue-on-error: true
-        with: { sarif_file: checkov-repo/results_sarif.sarif, category: checkov-repo }
+        with: { sarif_file: checkov-dockerfile.sarif, category: checkov-dockerfile }
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('checkov-workflows.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: checkov-workflows.sarif, category: checkov-workflows }
 
   dependency-review:
     if: github.event_name == 'pull_request'
