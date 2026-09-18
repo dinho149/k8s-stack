@@ -86,15 +86,15 @@ access-broker  ── policy.yaml (generated from the catalog) ──▶  deny |
 
 | Stack | Local users | SSO team → roles | How to administer |
 |---|---|---|---|
-| `local` (kind) | `admin` = `editor, auditor` (no `access`, no `approver`, no logins); `alice` = `requester`; `bob` = `requester, approver` | optional | `make up` enrols `admin` headlessly (credentials in `tests/.state/users.json`); `make login` / `make web-login`; `make bootstrap-admin` rotates them. **Lock the user after use**: `deploy/scripts/tctl.sh lock --user=admin --message="break-glass"` |
+| `local` (kind) | `admin` = `editor, auditor` (no `access`, no `approver`, no logins); `alice` = `requester`; `bob` = `requester, approver` | optional | `make teleport-up` enrols `admin` headlessly (credentials in `.dogfood/teleport/state/users.json`); `make teleport-login` / `make web-login`; `make bootstrap-admin` rotates them. **Lock the user after use**: `deploy/teleport/scripts/tctl.sh lock --user=admin --message="break-glass"` |
 | `dev-*`, `prod-*` | none (`localAuth: false`, `secondFactors: [webauthn]`) | `teleport-users` → `requester`; `teleport-approvers` → `requester, approver`; `teleport-admins` → `requester, approver, auditor` | request `break-glass-editor` (approved by another approver, 1h) |
 
-`make github-sso` writes exactly this mapping and, off the local stack, switches `localAuth` off and second factors
-to WebAuthn only. `deploy/scripts/bootstrap-users.sh` (and `bootstrap-admin.sh`) refuse to run for non-local stacks.
+`make teleport-github-sso` writes exactly this mapping and, off the local stack, switches `localAuth` off and second factors
+to WebAuthn only. `deploy/teleport/scripts/bootstrap-users.sh` (and `bootstrap-admin.sh`) refuse to run for non-local stacks.
 
 ### Invariants enforced by `buildProfile` (`src/config/profile.ts`)
 
-`pulumi preview`/`up` refuse a stack whose config violates any of these; `make preview` in CI sets
+`pulumi preview`/`up` refuse a stack whose config violates any of these; `make teleport-preview` in CI sets
 `TELEPORT_ALLOW_KIND_CONTEXT=1`, which only tolerates the kind context and a missing GitHub client secret for the
 scaffolded cloud stack files.
 

@@ -3,7 +3,7 @@ info:
   title: access-broker API
   version: "2"
   description: |
-    HTTP API of the Teleport access broker (services/teleport-access, `broker` subcommand).
+    HTTP API of the Teleport access broker (internal/teleportaccess, `broker` subcommand).
     Consumed by the chat agent (services/access-agent).
 
     Authentication:

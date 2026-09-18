@@ -35,5 +35,5 @@ Signed assertions plus default-deny NetworkPolicies, on top of the bearer tokens
 - The Claude Code (subscription) backend cannot set dynamic headers, so the agent runs a per-turn loopback proxy that
   swaps in fresh assertions.
 - The Go and TypeScript implementations are pinned to each other by a shared test vector
-  (`services/teleport-access/internal/assertion/crosscheck_test.go`).
+  (`internal/teleportaccess/assertion/crosscheck_test.go`).
 - mTLS via tbot workload identity remains a possible later hardening step and would compose with this design.

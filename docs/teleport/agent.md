@@ -1,7 +1,7 @@
 # The access agent
 
 `services/access-agent` is a Claude agent (`claude-opus-5`, adaptive thinking, streaming, tool runner) whose only tools
-come from the MCP server in `services/teleport-access`. It answers questions like:
+come from the MCP server in `cmd/teleport-access` + `internal/teleportaccess`. It answers questions like:
 
 - "What can I access right now?" → `whoami`, `list_accessible_resources`
 - "What role do I need to reach `postgres-prod`?" → `explain_access` (roles that grant it, which you hold / may request, and the broker's prediction)
@@ -66,7 +66,7 @@ the pod spec. A missing or empty file is a configuration error.
 
 When `PUBLIC_PORT` is set the agent runs two Fastify instances: the broker webhook and `/readyz` are not served on
 the public port, and the chat webhooks are not served on the internal one. Both apply the same body rules (JSON
-objects only, 256 KiB limit). `PUBLIC_PORT` must differ from `PORT`. Unset (local `make agent-cli`), one listener on
+objects only, 256 KiB limit). `PUBLIC_PORT` must differ from `PORT`. Unset (local `make teleport-agent-cli`), one listener on
 `PORT` serves everything as before. Slack needs no listener at all (Socket Mode). Shutdown closes both.
 
 Button clicks: the nonce is checked first (stale/missing nonce → refused before any lookup), then the clicker is
@@ -80,7 +80,7 @@ a 0700 directory.
 | `CLAUDE_AUTH_MODE` | How Claude is called | Credential | Billing |
 |---|---|---|---|
 | `api-key` (default) | Anthropic API, `@anthropic-ai/sdk` tool runner | `ANTHROPIC_API_KEY` (`teleport:chat.anthropicApiKey`) | API usage |
-| `subscription` | headless **Claude Code** (`claude -p`) with our MCP server passed via `--mcp-config` | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` (`make claude-token`), or your own Claude Code login locally | Claude Pro/Max subscription |
+| `subscription` | headless **Claude Code** (`claude -p`) with our MCP server passed via `--mcp-config` | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` (`make teleport-claude-token`), or your own Claude Code login locally | Claude Pro/Max subscription |
 
 Both modes keep the same guarantees. Because `claude --mcp-config` can only send static headers and assertions must
 be fresh (45 s), each subscription-mode turn starts a **loopback proxy** (`src/mcp/assertion-proxy.ts`) on
@@ -101,31 +101,31 @@ Things to know about the subscription mode:
   credentials and the nested-session markers (`CLAUDECODE`, `CLAUDE_SESSION_ID`, …), never reaches the child.
 - The token lives one year and is not refreshed. A boot-time probe and every failed turn that looks like an auth
   error mark the backend stale: `/readyz` turns 503, logs say `claude subscription authentication failed`, and users
-  get a friendly message. Fix with `make claude-token` again.
-- Locally, `make agent-cli` uses **your** Claude Code login (keychain) with no token at all when `claude` is on PATH
+  get a friendly message. Fix with `make teleport-claude-token` again.
+- Locally, `make teleport-agent-cli` uses **your** Claude Code login (keychain) with no token at all when `claude` is on PATH
   and no `ANTHROPIC_API_KEY` is exported (`AUTH=api-key` overrides). In-cluster, `CLAUDE_ALLOW_LOCAL_LOGIN` is always
   false and an isolated `CLAUDE_CONFIG_DIR` is used, so nothing from an operator's `~/.claude` can leak in.
 - We deliberately do **not** call the Messages API directly with the subscription bearer token (the technique some
   tools use, which requires impersonating Claude Code's system prompt). Headless Claude Code is the documented way a
-  subscription is used programmatically; see `docs/adr/0005-subscription-via-claude-code.md`.
+  subscription is used programmatically; see `adr/0005-subscription-via-claude-code.md`.
 
 ## Running locally
 
 ```bash
-make agent-cli AS=alice                 # port-forwards MCP + broker, reads the shared tokens from the stack,
+make teleport-agent-cli AS=alice                 # port-forwards MCP + broker, reads the shared tokens from the stack,
                                         # uses your Claude Code login (or ANTHROPIC_API_KEY if exported)
-make agent-cli AS=bob AUTH=api-key      # force the API-key backend
-make agent-cli AS=alice AGENT_ARGS="--script tests/e2e/agent-questions.txt"   # non-interactive
+make teleport-agent-cli AS=bob AUTH=api-key      # force the API-key backend
+make teleport-agent-cli AS=alice AGENT_ARGS="--script tests/teleport/e2e/agent-questions.txt"   # non-interactive
 ```
 
-`make agent-cli` must export `MCP_SHARED_TOKEN` and `IDENTITY_SIGNING_KEY` (the cluster's values) alongside the
+`make teleport-agent-cli` must export `MCP_SHARED_TOKEN` and `IDENTITY_SIGNING_KEY` (the cluster's values) alongside the
 port-forwards; without the key the agent refuses to start.
 
 Enable the in-cluster agent with `teleport:services.agent.enabled: true`, adapters in `services.agent.adapters`, and the
 credentials in the `teleport:chat` secret object (`pulumi config set --secret --path teleport:chat.slackBotToken ...`).
 Off kind, `services.agent.allowedEmailDomains` (→ `ALLOWED_EMAIL_DOMAINS`) is required, and `slackAllowedTeamIds`
 (→ `SLACK_ALLOWED_TEAM_IDS`) whenever the Slack adapter is on.
-Choose the Claude credential with `services.agent.auth: api-key` (+ `chat.anthropicApiKey`) or `make claude-token`
+Choose the Claude credential with `services.agent.auth: api-key` (+ `chat.anthropicApiKey`) or `make teleport-claude-token`
 (sets `auth: subscription` + `chat.claudeCodeOauthToken`). `services.agent.persistSessions: true` keeps Claude Code
 sessions on a PVC across restarts.
 

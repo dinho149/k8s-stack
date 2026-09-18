@@ -10,20 +10,21 @@ For the visual identity, see [brand guidance](docs/brand.md). Existing Stack use
 
 Install these system prerequisites first. Make installs project dependencies; it does not install or upgrade system tools.
 
-| Tool             | Required version / installation                                                                                                        |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| GNU Make and Git | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: distribution packages                                               |
-| Python           | 3.9+; [python.org](https://www.python.org/downloads/)                                                                                  |
-| Go               | 1.26+; [go.dev](https://go.dev/dl/)                                                                                                    |
-| Node.js and npm  | Node >=22 and <26 (22/24 LTS recommended); [nodejs.org](https://nodejs.org/en/download)                                                |
-| Docker           | Running Docker Desktop or Docker Engine; [Docker installation](https://docs.docker.com/get-started/get-docker/)                        |
-| kind             | [kind installation](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)                                                      |
-| kubectl          | Compatible with Kubernetes 1.34; [kubectl installation](https://kubernetes.io/docs/tasks/tools/)                                       |
-| Helm             | Helm 3 or 4; [Helm installation](https://helm.sh/docs/intro/install/)                                                                  |
-| ripgrep          | [ripgrep installation](https://github.com/BurntSushi/ripgrep#installation)                                                             |
-| OpenTofu         | 1.10+ for infrastructure checks, formatting, and the full ship gate; [OpenTofu installation](https://opentofu.org/docs/intro/install/) |
+| Tool             | Required version / installation                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GNU Make and Git | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: distribution packages                                                                                                    |
+| Python           | 3.9+; [python.org](https://www.python.org/downloads/)                                                                                                                                       |
+| Go               | 1.26+; [go.dev](https://go.dev/dl/)                                                                                                                                                         |
+| Node.js and npm  | Node >=22 and <26 (22/24 LTS recommended); [nodejs.org](https://nodejs.org/en/download)                                                                                                     |
+| Docker           | Running Docker Desktop or Docker Engine; [Docker installation](https://docs.docker.com/get-started/get-docker/)                                                                             |
+| kind             | [kind installation](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)                                                                                                           |
+| kubectl          | Compatible with Kubernetes 1.34; [kubectl installation](https://kubernetes.io/docs/tasks/tools/)                                                                                            |
+| Helm             | Helm 3 or 4; [Helm installation](https://helm.sh/docs/intro/install/)                                                                                                                       |
+| ripgrep          | [ripgrep installation](https://github.com/BurntSushi/ripgrep#installation)                                                                                                                  |
+| OpenTofu         | 1.10+ for infrastructure checks, formatting, and the full ship gate; [OpenTofu installation](https://opentofu.org/docs/intro/install/)                                                      |
+| Pulumi, expect   | Teleport only: [Pulumi installation](https://www.pulumi.com/docs/install/); `expect` (preinstalled on macOS) drives headless `tsh` logins. mkcert is optional (browser-trusted certificate) |
 
-Supported hosts: macOS and Linux. Allocate 8+ GB to Docker for the base stack, or 16+ GB for expanded tools and several previews. The local stack uses ports 3000, 7007, 8088, 15432, 5005, 18080, and 18443; the optional agent uses 8090.
+Supported hosts: macOS and Linux. Allocate 8+ GB to Docker for the base stack, or 16+ GB for expanded tools and several previews. The local stack uses ports 3000, 7007, 8088, 15432, 5005, 18080, and 18443; the optional agent uses 8090. Teleport (optional) adds 3080 and the port-forwards 18380–18383.
 
 From the repository root:
 
@@ -53,6 +54,21 @@ make down                  # Delete previews and cluster; retain database/regist
 
 For a complete fresh start, `make reset CONFIRM=dogfood-local` deletes the local cluster, dedicated containers and their data, credentials, and `.dogfood` state. It leaves `.env` intact. `make clean` removes generated build/test artifacts after `make stop`.
 
+### Teleport access (optional)
+
+Teleport is Dogfood's engine for just-in-time, zero-standing-privilege access to servers, databases, Kubernetes and
+apps. It deploys into the same `dogfood-local` cluster and is off by default:
+
+```sh
+make teleport-up           # deploy Teleport into the local cluster (or: make up TELEPORT=1)
+make teleport-login        # tsh login without prompts; make teleport-login USER_NAME=alice for a seeded user
+make teleport-status       # pods, Teleport inventory, pending access requests, your session
+make teleport-down         # destroy the Teleport stack; the cluster stays
+```
+
+`make help-all` lists the whole **Teleport** group. Read [docs/teleport/local.md](docs/teleport/local.md) for the
+walkthrough and [docs/teleport/access-model.md](docs/teleport/access-model.md) for the access model.
+
 ### Preview workflow
 
 ```sh
@@ -72,15 +88,16 @@ Local previews deploy directly through Helm into vClusters, so an unpublished re
 
 ### Command reference
 
-| Activity              | Commands                                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Setup and lifecycle   | `help`, `help-all`, `setup`, `doctor`, `up`, `open`, `status`, `logs`, `stop`, `restart`, `down`, `reset`, `clean`         |
-| Component development | `portal` runs the frontend in the foreground; `agent` / `agent-stop` manage the agent; `local` bootstraps only the cluster |
-| Previews              | `sample-build`, `preview-up`, `preview-status`, `preview-down`, `preview-retry`, `preview-extend`, `preview-diagnostics`   |
-| Build and formatting  | `build`, `typecheck`, `format`, `format-check`, `lint`                                                                     |
-| Tests                 | `test-local`, `test-agent`, `test-portal`, `test-fast`, `test-scoped`, `test`, `ship-gate`                                 |
-| Additional checks     | `browser-install`, `audit`, `infra-validate`, `catalog-check`, `test-isolation`                                            |
-| Optional tools        | `catalog-sync`, `tool-routes`, `benchmark`, `benchmark-report`                                                             |
+| Activity              | Commands                                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Setup and lifecycle   | `help`, `help-all`, `setup`, `doctor`, `up`, `open`, `status`, `logs`, `stop`, `restart`, `down`, `reset`, `clean`                |
+| Component development | `portal` runs the frontend in the foreground; `agent` / `agent-stop` manage the agent; `local` bootstraps only the cluster        |
+| Previews              | `sample-build`, `preview-up`, `preview-status`, `preview-down`, `preview-retry`, `preview-extend`, `preview-diagnostics`          |
+| Build and formatting  | `build`, `typecheck`, `format`, `format-check`, `lint`                                                                            |
+| Tests                 | `test-local`, `test-agent`, `test-portal`, `test-fast`, `test-scoped`, `test`, `ship-gate`                                        |
+| Additional checks     | `browser-install`, `audit`, `infra-validate`, `catalog-check`, `test-isolation`                                                   |
+| Optional tools        | `catalog-sync`, `tool-routes`, `benchmark`, `benchmark-report`                                                                    |
+| Teleport              | `teleport-up`, `teleport-login`, `teleport-status`, `teleport-requests`, `teleport-approve`, `teleport-down`, … (`make help-all`) |
 
 All entries are Make targets: run `make <command>`. `make help-all` documents their arguments. Use `VERBOSE=1` to stream subprocess details and `NO_COLOR=1` to disable color. Redirected output is plain text. Complete task and service logs live under `.dogfood/logs/`; failures show a short excerpt and log location. `make logs` labels service output and masks configured secrets.
 
@@ -166,15 +183,19 @@ make ship-gate             # Formatting, lint, all tests, Helm, builds, infrastr
 
 ## Repository map
 
-| Area                                  | Location                              |
-| ------------------------------------- | ------------------------------------- |
-| CLI and lifecycle service             | `cmd/dogfood`, `internal/platform`    |
-| Claude agent and chat adapters        | `services/agent`                      |
-| Backstage frontend and backend plugin | `packages/portal`, `packages/backend` |
-| Helm charts and cluster resources     | `deploy`                              |
-| Cloud hosts and retained databases    | `infra`                               |
-| Versioned platform tools              | `catalog`                             |
-| Automation and benchmarks             | `scripts`, `.github/workflows`        |
+| Area                                   | Location                                             |
+| -------------------------------------- | ---------------------------------------------------- |
+| CLI and lifecycle service              | `cmd/dogfood`, `internal/platform`                   |
+| Claude agent and chat adapters         | `services/agent`                                     |
+| Backstage frontend and backend plugin  | `packages/portal`, `packages/backend`                |
+| Helm charts and cluster resources      | `deploy`                                             |
+| Cloud hosts and retained databases     | `infra`                                              |
+| Versioned platform tools               | `catalog`                                            |
+| Automation and benchmarks              | `scripts`, `.github/workflows`                       |
+| Teleport: Pulumi project               | `infra/teleport`                                     |
+| Teleport: MCP server and access broker | `cmd/teleport-access`, `internal/teleportaccess`     |
+| Teleport: access agent (chat)          | `services/access-agent`                              |
+| Teleport: images, scripts, tests, docs | `deploy/teleport`, `tests/teleport`, `docs/teleport` |
 
 ## Portal experience
 

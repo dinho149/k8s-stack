@@ -32,7 +32,7 @@ merges them over per-platform defaults (`src/config/platforms/*.ts`), validates 
 
 All Teleport configuration is expressed as operator CRs in the `teleport` namespace, so no Teleport credentials are
 needed at deploy time. The Terraform provider (`pulumi package add terraform-provider terraform.releases.teleport.dev/gravitational/teleport`)
-remains an option for non-Kubernetes resources; see `docs/adr/0001-crs-not-terraform-provider.md`.
+remains an option for non-Kubernetes resources; see `adr/0001-crs-not-terraform-provider.md`.
 
 Helm charts go through `src/lib/helm.ts` (`kubernetes.helm.v4.Chart`). The Teleport charts' only hooks are optional
 config-validation Jobs, disabled with `validateConfigOnDeploy: false`.
@@ -58,7 +58,7 @@ call `SetAccessRequestState` and the MCP server create pending requests on a use
 | `dev-eks` / `dev-gke` / `dev-aks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | standalone by default, `aws`/`gcp`/`azure` chartMode when backends exist | GitHub SSO + WebAuthn only, no local auth |
 | `prod-eks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | `aws` chartMode (audit log mirrored to stdout) | GitHub SSO + WebAuthn only, no local auth |
 
-Cloud stacks are scaffolds: they must pass `make preview STACK=…`; only `local` is deployed and tested end to end.
+Cloud stacks are scaffolds: they must pass `make teleport-preview STACK=…`; only `local` is deployed and tested end to end.
 
 ## Session controls (chart values, `TeleportCluster.renderClusterValues`)
 
