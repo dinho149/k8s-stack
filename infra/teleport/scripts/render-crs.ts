@@ -44,7 +44,7 @@ pulumi.runtime.setMocks(
 pulumi.runtime.setAllConfig(flat);
 
 (async () => {
-  await import("../index");
+  await import("../index.js");
   await new Promise((r) => setTimeout(r, 500)); // let outputs settle
   for (const m of manifests) {
     const md = m.metadata as { name: string };
