@@ -6,9 +6,9 @@
 #   - otherwise, `claude` on PATH           -> subscription backend using YOUR Claude Code login (no token needed)
 source "$(dirname "$0")/_common.sh"
 # The CLI adapter reads the stack's shared secrets and port-forwards into the cluster: kind only.
-[[ "$STACK" == "local" ]] || ui::die "make agent-cli is only for STACK=local (current: $STACK); use the chat adapters on cloud stacks"
+[[ "$STACK" == "local" ]] || ui::die "make teleport-agent-cli is only for STACK=local (current: $STACK); use the chat adapters on cloud stacks"
 as="${1:-admin}"; shift || true
-[[ -d "$REPO_ROOT/node_modules/@anthropic-ai" ]] || ui::die "run: make deps"
+[[ -d "$REPO_ROOT/node_modules/@anthropic-ai" ]] || ui::die "run: make setup"
 mode="${AUTH:-${CLAUDE_AUTH_MODE:-}}"
 if [[ -z "$mode" ]]; then
   if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then mode=api-key
@@ -29,7 +29,7 @@ if [[ -z "${MCP_SHARED_TOKEN:-}" || -z "${BROKER_API_TOKEN:-}" || -z "${IDENTITY
   popd >/dev/null || exit 1
 fi
 [[ -n "$MCP_SHARED_TOKEN" ]] || ui::die "could not read mcpSharedToken from stack $STACK (is it deployed?)"
-[[ -n "$IDENTITY_SIGNING_KEY" ]] || ui::die "could not read identitySigningKey from stack $STACK (redeploy: make deploy)"
+[[ -n "$IDENTITY_SIGNING_KEY" ]] || ui::die "could not read identitySigningKey from stack $STACK (redeploy: make teleport-deploy)"
 # Port-forward MCP and broker unless URLs were given.
 pids=()
 if [[ -z "${MCP_URL:-}" ]]; then $KUBECTL -n teleport-access port-forward svc/teleport-mcp 18380:8080 >"$UI_LOG_DIR/pf-mcp.log" 2>&1 & pids+=($!); export MCP_URL=http://localhost:18380/mcp; fi

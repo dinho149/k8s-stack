@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # tsh-login.sh — headless `tsh login --auth local` (password + TOTP) for the local kind stack.
 # Sourced after _common.sh (needs REPO_ROOT, STATE_DIR, UI_LOG_DIR, PROXY_ADDR, TSH_INSECURE_FLAG).
-# Credentials come from .dogfood/teleport/state/users.json, written by tests/teleport/tools/seed-users (make up / make bootstrap-users).
+# Credentials come from .dogfood/teleport/state/users.json, written by tests/teleport/tools/seed-users (make teleport-up / make teleport-bootstrap-users).
 TSH_BIN="${TSH_BIN:-$REPO_ROOT/bin/tsh}"
 USERS_JSON="${USERS_JSON:-$STATE_DIR/users.json}"
 
 tshlogin::require_creds() {
-  [[ -f "$USERS_JSON" ]] || ui::die "no seeded credentials at .dogfood/teleport/state/users.json — run: make up  (or: make bootstrap-users)"
+  [[ -f "$USERS_JSON" ]] || ui::die "no seeded credentials at .dogfood/teleport/state/users.json — run: make teleport-up  (or: make teleport-bootstrap-users)"
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1])) else 1)' "$USERS_JSON" "$1" \
-    || ui::die "user '$1' is not enrolled — run: make bootstrap-users USERS=$1"
+    || ui::die "user '$1' is not enrolled — run: make teleport-bootstrap-users USERS=$1"
 }
 tshlogin::password() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]]["password"])' "$USERS_JSON" "$1"; }
 # 30s window index in which the user was enrolled (enrolment consumes one TOTP code); 0 when unknown.
@@ -37,7 +37,7 @@ tshlogin::code() {
 }
 
 # 0 when the active tsh profile is <user> on this proxy AND still works against the cluster. A profile left
-# over from a previous cluster (make down / make up) looks valid locally but its CA no longer exists.
+# over from a previous cluster (make teleport-down / make teleport-up) looks valid locally but its CA no longer exists.
 tshlogin::active_session_ok() {
   local user="$1"
   # shellcheck disable=SC2086
@@ -51,7 +51,7 @@ tshlogin::login() {
   local user="$1" pw code
   # tsh insists on a terminal for password prompts, so drive it with expect (macOS ships it; CI installs it).
   command -v expect >/dev/null || ui::die "expect is required for headless tsh login (brew install expect / apt-get install expect)"
-  [[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make tsh)"
+  [[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make teleport-tsh)"
   if [[ "${TSH_RELOGIN:-0}" != "1" ]] && tshlogin::active_session_ok "$user"; then
     ui::ok "already logged in as $user (TSH_RELOGIN=1 to log in again)"; return 0
   fi

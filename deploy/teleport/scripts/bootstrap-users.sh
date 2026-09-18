@@ -23,11 +23,11 @@ wait_users() {
     sleep 3; t=$((t + 3))
   done
 }
-ui::spinner "Waiting for users $users" wait_users || ui::die "users not created yet — check: make logs SVC=operator"
+ui::spinner "Waiting for users $users" wait_users || ui::die "users not created yet — check: make teleport-logs SVC=operator"
 
 mkdir -p "$STATE_DIR"
 # shellcheck disable=SC2086 # $force is empty or -force
 ui::spinner "Enrolling $users (password + TOTP${force:+, re-enrol})" env TELEPORT_PROXY="$PROXY_ADDR" HARNESS_IDENTITY="$STATE_DIR/harness.identity" TELEPORT_INSECURE=1 \
   go run -C "$REPO_ROOT" ./tests/teleport/tools/seed-users -out "$STATE_DIR/users.json" -users "$users" -skip-existing $force
 grep -E "^(enrolled|skipping)" "$UI_LOG_DIR/enrolling-"*.log 2>/dev/null | sed 's/^.*\.log://; s/^/    /' || true
-ui::kv "credentials" ".dogfood/teleport/state/users.json (gitignored, 0600) — make login / make web-login"
+ui::kv "credentials" ".dogfood/teleport/state/users.json (gitignored, 0600) — make teleport-login / make teleport-web-login"

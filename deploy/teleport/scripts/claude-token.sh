@@ -27,4 +27,4 @@ unset tok
 pulumi config set --stack "$STACK" --path 'teleport:services.agent.auth' subscription
 pulumi config set --stack "$STACK" --path 'teleport:services.agent.enabled' true
 ui::ok "stored (encrypted) in Pulumi.$STACK.yaml; agent auth=subscription, enabled=true"
-ui::box "Next" "make images deploy          # roll the agent out (builds the image with the Claude Code CLI)" "make logs SVC=agent         # look for 'claude credential probe' ok=true" "" "${UI_DIM}The token is not refreshed automatically: re-run 'make claude-token' before it expires (one year).${UI_RESET}"
+ui::box "Next" "make teleport-images deploy          # roll the agent out (builds the image with the Claude Code CLI)" "make teleport-logs SVC=agent         # look for 'claude credential probe' ok=true" "" "${UI_DIM}The token is not refreshed automatically: re-run 'make teleport-claude-token' before it expires (one year).${UI_RESET}"

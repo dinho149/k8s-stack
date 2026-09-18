@@ -38,6 +38,7 @@ GROUPS = {
     'Manage services': {'status': 'Show health and URLs', 'logs': 'Follow logs [SERVICE=all|api|backend|portal|agent|database|registry]', 'stop': 'Stop app services, preserving the cluster', 'restart': 'Restart app services', 'down': 'Delete previews and local cluster; retain database/registry data', 'reset': 'Delete all local data CONFIRM=dogfood-local', 'clean': 'Remove build and test artifacts', 'local': 'Bootstrap only the local cluster', 'portal': 'Run the frontend in the foreground', 'agent': 'Start the optional agent', 'agent-stop': 'Stop the agent'},
     'Previews': {'sample-build': 'Build and record the sample image digest', 'preview-up': 'Create preview NAME=demo [IMAGE=… REVISION=…]', 'preview-status': 'List previews or inspect NAME=demo', 'preview-down': 'Request deletion NAME=demo [CONFIRMATION=…]', 'preview-retry': 'Redeploy NAME=demo [IMAGE=… REVISION=…]', 'preview-extend': 'Extend NAME=demo MINUTES=30', 'preview-diagnostics': 'Inspect Kubernetes diagnostics NAME=demo'},
     'Checks': {'build': 'Build Go and npm workspaces', 'typecheck': 'Check TypeScript', 'format': 'Format source and infrastructure', 'format-check': 'Check source and infrastructure formatting', 'lint': 'Check formatting, Go, TypeScript and shell syntax', 'test-fast': 'Run Go, agent, orchestration and portal tests', 'test-scoped': 'Run the test lane', 'test': 'Run lint, tests and Helm checks', 'ship-gate': 'Run all CI checks and builds', 'test-portal': 'Run browser tests', 'test-agent': 'Run agent unit tests', 'test-local': 'Run local orchestration tests', 'browser-install': 'Install Chromium [WITH_DEPS=1]', 'audit': 'Audit npm dependencies', 'infra-validate': 'Validate all OpenTofu modules'},
+    'Teleport': {'teleport-up': 'Deploy Teleport into the local cluster (also: make up TELEPORT=1)', 'teleport-deploy': 'pulumi up only [STACK=local PULUMI_ARGS=…]', 'teleport-preview': 'pulumi preview --diff [STACK=… CI_PREVIEW=1]', 'teleport-down': 'Destroy the Teleport stack; keep the cluster', 'teleport-status': 'Teleport dashboard: pods, inventory, requests, your session', 'teleport-doctor': 'Check the Teleport toolchain (pulumi, tsh, expect, mkcert)', 'teleport-urls': 'Every Teleport URL you can open', 'teleport-login': 'tsh login without prompts [USER_NAME=admin|alice|bob TSH_RELOGIN=1]', 'teleport-web-login': 'Open the Teleport web UI and print the credentials [USER_NAME=admin]', 'teleport-tctl': 'Run tctl in the auth pod ARGS="get roles"', 'teleport-requests': 'List access requests', 'teleport-approve': 'Approve a request ID=… [REASON=…]', 'teleport-deny': 'Deny a request ID=… REASON=…', 'teleport-agent-cli': 'Chat with the access agent in the terminal [AS=alice]', 'teleport-logs': 'Follow Teleport logs [SVC=auth|proxy|operator|kube-agent|ssh|postgres|broker|mcp|agent]', 'teleport-port-forward': 'Port-forward an access service SVC=mcp|broker|agent (18380/18381/18382)', 'teleport-tls': 'Browser-trusted certificate for the local proxy via mkcert', 'teleport-github-sso': 'Store GitHub OAuth App credentials for STACK (prompts)', 'teleport-claude-token': 'Store a Claude subscription token for the in-cluster agent', 'teleport-tsh': 'Download tsh/tctl/tbot into ./bin', 'teleport-images': 'Build the Teleport service images and load them into kind [IMAGE_TAG=dev]', 'teleport-bootstrap-users': 'Enrol local users headlessly [USERS=admin,alice,bob]', 'teleport-bootstrap-admin': 'Rotate the local break-glass admin credentials', 'teleport-seed-test-users': 'Headless password+TOTP enrolment for alice/bob', 'teleport-render': 'Render the Teleport CRs offline and validate them with kubeconform', 'teleport-test': 'Teleport integration + tsh end-to-end tests against the live cluster', 'teleport-test-integration': 'Go integration tests against the live cluster', 'teleport-test-e2e': 'tsh end-to-end scenarios', 'teleport-hooks': 'Install the pre-commit + pre-push git hooks', 'teleport-secrets-guard': 'Refuse non-local stacks that still use the file backend / default passphrase'},
     'Optional tools': {'catalog-check': 'Resolve pinned charts', 'catalog-sync': 'Install catalog REPOSITORY=https://…', 'tool-routes': 'Install routes [TOOLS=argocd,grafana,keycloak]', 'benchmark': 'Measure previews [RUNS=30 CONCURRENCY=5]', 'benchmark-report': 'Summarize measurements', 'test-isolation': 'Check isolation between two running previews'},
 }
 
@@ -366,7 +367,7 @@ def setup():
         if not shutil.which(tool):
             raise RuntimeError(f'{tool} is required. See README prerequisites, then run make setup.')
     stamp = STATE / 'dependencies.sha256'
-    manifests = [ROOT / 'package-lock.json', ROOT / 'package.json'] + sorted((ROOT / 'packages').glob('*/package.json')) + sorted((ROOT / 'services').glob('*/package.json'))
+    manifests = [ROOT / 'package-lock.json', ROOT / 'package.json'] + sorted((ROOT / 'packages').glob('*/package.json')) + sorted((ROOT / 'services').glob('*/package.json')) + [ROOT / 'infra/teleport/package.json']
     digest = hashlib.sha256(b''.join(path.read_bytes() for path in manifests) + capture(['node', '--version']).encode()).hexdigest()
     if not (ROOT / 'node_modules/.bin/playwright').exists() or not stamp.exists() or stamp.read_text() != digest:
         run('Install npm dependencies', ['npm', 'ci', '--ignore-scripts'])
@@ -605,6 +606,10 @@ def down(reset=False):
             run(('Remove ' if reset else 'Stop ') + name, ['docker', 'rm', '-f', '-v', name] if reset else ['docker', 'stop', name])
     if 'dogfood-local' in clusters:
         run('Delete local cluster', ['kind', 'delete', 'cluster', '--name', 'dogfood-local'])
+        # The Teleport stack lived in that cluster: its Pulumi state and seeded credentials are meaningless now.
+        # The mkcert certificate files (.dogfood/teleport/tls) are kept: they are independent of the cluster.
+        for name in ('pulumi', 'state'):
+            shutil.rmtree(STATE / 'teleport' / name, ignore_errors=True)
     if reset:
         for path in STATE.iterdir():
             if path.name == 'local.lock':
@@ -646,6 +651,8 @@ def status():
     if shutil.which('kind'):
         clusters = capture(['kind', 'get', 'clusters']).splitlines()
         status_row('Kubernetes', 'present' if 'dogfood-local' in clusters else 'absent', 'dogfood-local')
+        teleport_up = (STATE / 'teleport' / 'pulumi').exists() and port_busy(3080)
+        status_row('Teleport', 'present' if teleport_up else 'absent', 'https://teleport.127.0.0.1.nip.io:3080 · make teleport-status' if teleport_up else 'make teleport-up')
     print()
     rule()
     if untracked:
@@ -694,6 +701,7 @@ def checks(command):
         'test-agent': ['npm', 'run', 'test', '--workspace', '@dogfood/agent'],
         'test-portal': ['npm', 'run', 'test', '--workspace', '@dogfood/portal'],
         'test-local': ['python3', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-v'],
+        'test-teleport': ['npm', 'run', 'test', '--workspace', '@dogfood/teleport-infra', '--workspace', '@dogfood/access-agent'],
         'audit': ['npm', 'audit', '--audit-level=high'],
         'catalog-check': ['python3', 'scripts/catalog-check.py'],
         'test-isolation': ['python3', 'scripts/test-isolation.py'],
@@ -702,6 +710,7 @@ def checks(command):
         run(command, direct[command])
     elif command == 'build':
         run('Build lifecycle CLI', ['go', 'build', '-o', 'bin/dogfood', './cmd/dogfood'])
+        run('Build teleport-access', ['go', 'build', '-o', 'bin/teleport-access', './cmd/teleport-access'])
         run('Build workspaces', ['npm', 'run', 'build'])
     elif command in ('format', 'format-check'):
         write = command == 'format'
@@ -714,15 +723,20 @@ def checks(command):
         checks('typecheck')
         for script in sorted((ROOT / 'scripts').glob('*.sh')):
             run('Shell syntax ' + script.name, ['bash', '-n', str(script)])
+        run('Access agent lint', ['npm', 'run', 'lint', '--workspace', '@dogfood/access-agent'])
+        teleport_scripts = sorted((ROOT / 'deploy/teleport/scripts').glob('*.sh')) + sorted((ROOT / 'deploy/teleport/scripts/lib').glob('*.sh')) + sorted((ROOT / 'tests/teleport/e2e').glob('*.sh'))
+        run('Shell syntax (teleport scripts)', ['bash', '-c', 'for f in "$@"; do bash -n "$f" || exit 1; done', '_'] + [str(s) for s in teleport_scripts])
     elif command in ('test-fast', 'test-scoped'):
         run('Go tests', ['go', 'test', '-race', './cmd/...', './internal/...'])
         checks('test-local')
         checks('test-agent')
+        checks('test-teleport')
         checks('test-portal')
     elif command == 'test':
         checks('lint')
         checks('test-fast')
         run('Helm checks', ['helm', 'lint', 'deploy/charts/sample', 'deploy/charts/platform'])
+        teleport('teleport-render')
     elif command == 'ship-gate':
         for target in ('test', 'build', 'infra-validate', 'audit'):
             checks(target)
@@ -730,6 +744,111 @@ def checks(command):
         for directory in ('infra/aws', 'infra/gcp', 'infra/data/aws', 'infra/data/gcp'):
             run('Initialize ' + directory, ['tofu', '-chdir=' + directory, 'init', '-backend=false', '-input=false', '-lockfile=readonly'])
             run('Validate ' + directory, ['tofu', '-chdir=' + directory, 'validate'])
+    else:
+        raise RuntimeError('Unknown command: ' + command)
+
+
+TELEPORT_SCRIPTS = ROOT / 'deploy/teleport/scripts'
+
+
+def teleport_env():
+    """Environment the Teleport scripts expect (deploy/teleport/scripts/_common.sh reads the same names)."""
+    ENV.setdefault('STACK', 'local')
+    ENV.update(REPO_ROOT=str(ROOT), KIND_CLUSTER='dogfood-local', KUBE_CONTEXT='kind-dogfood-local')
+    ENV.setdefault('PROXY_ADDR', 'teleport.127.0.0.1.nip.io:3080')
+    ENV.setdefault('PULUMI_BACKEND_URL', 'file://' + str(STATE / 'teleport' / 'pulumi'))
+    if ENV['STACK'] == 'local':
+        # The well-known passphrase exists ONLY for the throwaway kind stack; other stacks are refused
+        # by deploy/teleport/scripts/secrets-guard.sh unless a real backend + secrets provider is configured.
+        ENV.setdefault('PULUMI_CONFIG_PASSPHRASE', 'local-dev')
+    ENV.setdefault('UI_LOG_DIR', str(LOGS / 'teleport'))
+    ENV.setdefault('TELEPORT_MCP_URL', 'http://127.0.0.1:18380/mcp')
+    ENV.setdefault('TELEPORT_BROKER_URL', 'http://127.0.0.1:18381')
+    ENV.setdefault('TELEPORT_PORTAL_URL', 'http://127.0.0.1:18383')
+    if not COLOR:
+        ENV['NO_COLOR'] = '1'
+    (LOGS / 'teleport').mkdir(parents=True, exist_ok=True)
+
+
+def foreground(args, cwd=ROOT):
+    """Run an interactive Teleport script in the foreground (it draws its own spinners, tables and boxes)."""
+    try:
+        subprocess.run(args, cwd=cwd, env=ENV, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f'{Path(args[0]).name} failed (exit {exc.returncode}). Logs in .dogfood/logs/teleport/') from exc
+
+
+def teleport(command):
+    teleport_env()
+    script = lambda name: str(TELEPORT_SCRIPTS / name)  # noqa: E731
+    if command == 'teleport-up':
+        local_config()
+        if 'dogfood-local' not in capture(['kind', 'get', 'clusters']).splitlines():
+            bootstrap()
+        foreground([script('up.sh')])
+    elif command == 'teleport-deploy':
+        foreground([script('stack-init.sh')])
+        foreground([script('pulumi-run.sh'), 'up', ENV['STACK']] + shlex.split(ENV.get('PULUMI_ARGS', '')))
+    elif command == 'teleport-preview':
+        foreground([script('preview.sh')])
+    elif command == 'teleport-down':
+        foreground([script('down.sh')])
+    elif command in ('teleport-status', 'teleport-doctor', 'teleport-urls', 'teleport-requests', 'teleport-secrets-guard'):
+        foreground([script(command[len('teleport-'):] + '.sh')])
+    elif command == 'teleport-login':
+        foreground([script('login.sh')] + ([ENV['USER_NAME']] if ENV.get('USER_NAME') else []))
+    elif command == 'teleport-web-login':
+        foreground([script('web-login.sh')] + ([ENV['USER_NAME']] if ENV.get('USER_NAME') else []))
+    elif command == 'teleport-tctl':
+        foreground([script('tctl.sh')] + shlex.split(ENV.get('ARGS', '')))
+    elif command in ('teleport-approve', 'teleport-deny'):
+        verb = command[len('teleport-'):]
+        if not ENV.get('ID'):
+            raise RuntimeError(f'usage: make {command} ID=<request-id>' + (' [REASON=...]' if verb == 'approve' else ' REASON=...'))
+        reason = ENV.get('REASON') or f'{verb}d via make'
+        foreground([script('tctl.sh'), 'request', verb, '--reason=' + reason, ENV['ID']])
+        say(f'  ✓ {verb}d {ENV["ID"]}', '32')
+    elif command == 'teleport-agent-cli':
+        foreground([script('agent-cli.sh'), ENV.get('AS', 'admin')] + shlex.split(ENV.get('AGENT_ARGS', '')))
+    elif command == 'teleport-logs':
+        foreground([script('logs.sh'), ENV.get('SVC', 'auth')])
+    elif command == 'teleport-port-forward':
+        foreground([script('port-forward.sh'), ENV.get('SVC', 'mcp')])
+    elif command == 'teleport-tls':
+        ENV['LOCAL_TLS'] = '1'
+        foreground([script('local-tls.sh')])
+    elif command in ('teleport-github-sso', 'teleport-claude-token'):
+        foreground([script('stack-init.sh')])
+        foreground([script(command[len('teleport-'):] + '.sh')])
+    elif command == 'teleport-tsh':
+        foreground([script('install-tsh.sh')])
+    elif command == 'teleport-images':
+        foreground([script('secrets-guard.sh')])
+        foreground([script('load-images.sh'), ENV.get('IMAGE_TAG', 'dev')])
+    elif command == 'teleport-bootstrap-users':
+        foreground([script('bootstrap-users.sh'), ENV.get('USERS', 'admin,alice,bob')])
+    elif command == 'teleport-bootstrap-admin':
+        foreground([script('bootstrap-admin.sh'), 'admin'])
+    elif command == 'teleport-seed-test-users':
+        foreground([script('harness-identity.sh')])
+        foreground([script('seed-test-users.sh')])
+    elif command == 'teleport-render':
+        run('Render Teleport CRs', [script('render-crs.sh')])
+    elif command == 'teleport-test-integration':
+        foreground([script('harness-identity.sh')])
+        ENV.update(TELEPORT_PROXY=ENV['PROXY_ADDR'], HARNESS_IDENTITY=str(STATE / 'teleport' / 'state' / 'harness.identity'), TELEPORT_INSECURE='1')
+        foreground(['go', 'test', './tests/teleport/integration/...', '-tags=integration', '-count=1', '-timeout', '15m', '-v'])
+    elif command == 'teleport-test-e2e':
+        for test in sorted((ROOT / 'tests/teleport/e2e').glob('[0-9]*.sh')):
+            foreground(['bash', str(test)])
+    elif command == 'teleport-test':
+        teleport('teleport-test-integration')
+        teleport('teleport-test-e2e')
+    elif command == 'teleport-hooks':
+        if not shutil.which('pre-commit'):
+            raise RuntimeError('pre-commit is not installed: pipx install pre-commit  (or brew install pre-commit)')
+        run('Install git hooks', ['pre-commit', 'install', '--hook-type', 'pre-commit', '--hook-type', 'pre-push'])
+        say('  ✓ hooks installed — run pre-commit run --all-files once to warm the caches', '32')
     else:
         raise RuntimeError('Unknown command: ' + command)
 
@@ -745,6 +864,8 @@ def dispatch(command):
         bootstrap()
         sample_build()
         app_start()
+        if ENV.get('TELEPORT') == '1':
+            teleport('teleport-up')
         say('\n  Ready → http://localhost:3000\n  make logs · make status · make down', '1;32')
     elif command == 'local':
         bootstrap()
@@ -814,6 +935,8 @@ def dispatch(command):
             run('Benchmark previews', ['python3', 'scripts/benchmark.py', '--image', image, '--revision', revision, '--runs', ENV.get('RUNS', '30'), '--concurrency', ENV.get('CONCURRENCY', '5')])
         run('Benchmark report', ['bin/dogfood', 'benchmark', '--file', '.dogfood/benchmark.json'])
         print((LOGS / 'benchmark-report.log').read_text())
+    elif command.startswith('teleport-'):
+        teleport(command)
     elif command == 'clean':
         if any(alive(s) for s in SERVICES):
             raise RuntimeError('Run make stop before cleaning build artifacts.')
@@ -848,7 +971,9 @@ def main():
     # Checks do not mutate cluster/process state and must not block behind
     # long bootstrap operations (including editor and stop-hook lint runs).
     read_only = ('status', 'logs', 'open', 'lint', 'format-check', 'typecheck',
-                 'audit', 'catalog-check', 'test-local')
+                 'audit', 'catalog-check', 'test-local', 'test-teleport',
+                 'teleport-status', 'teleport-doctor', 'teleport-urls', 'teleport-logs', 'teleport-requests',
+                 'teleport-tctl', 'teleport-render', 'teleport-port-forward', 'teleport-secrets-guard')
     with contextlib.nullcontext() if command in read_only else locked():
         dispatch(command)
     if command not in ('status', 'logs', 'open'):

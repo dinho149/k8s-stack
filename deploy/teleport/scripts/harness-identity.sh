@@ -9,4 +9,4 @@ for _ in $(seq 1 40); do
     chmod 0600 "$out"; ui::ok "harness identity written to .dogfood/teleport/state/harness.identity"; exit 0; fi
   sleep 3
 done
-ui::die "secret teleport-access/ci-harness-identity not populated yet (is tbot-ci-harness running? make logs SVC=broker)"
+ui::die "secret teleport-access/ci-harness-identity not populated yet (is tbot-ci-harness running? make teleport-logs SVC=broker)"

@@ -5,7 +5,7 @@
 # has `repo` + `admin:repo_hook` scope (or a fine-grained token with Administration: write).
 source "$(dirname "$0")/_common.sh"
 repo="${1:-${REPO:-}}"
-[[ -n "$repo" && "$repo" == */* ]] || ui::die "usage: make repo-security REPO=owner/name"
+[[ -n "$repo" && "$repo" == */* ]] || ui::die "usage: deploy/teleport/scripts/repo-security.sh owner/name"
 ui::require gh
 default_branch="${DEFAULT_BRANCH:-main}"
 # Every check listed here must exist as a job/workflow name in .github/workflows, otherwise merges block forever.

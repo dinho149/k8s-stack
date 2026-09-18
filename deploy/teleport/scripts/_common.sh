@@ -64,8 +64,8 @@ common::tls_trusted() {
 common::tls_note() {
   if [[ "$STACK" != "local" ]]; then echo "verified TLS"
   elif common::tls_trusted; then echo "trusted certificate (mkcert)"
-  elif [[ -f "$LOCAL_TLS_DIR/teleport.crt" ]]; then echo "mkcert certificate, root CA not trusted yet: make tls"
-  else echo "self-signed: accept the browser warning, or: make tls && make deploy"; fi
+  elif [[ -f "$LOCAL_TLS_DIR/teleport.crt" ]]; then echo "mkcert certificate, root CA not trusted yet: make teleport-tls"
+  else echo "self-signed: accept the browser warning, or: make teleport-tls && make teleport-deploy"; fi
 }
 
 # ---------------------------------------------------------------------------- Pulumi secrets policy

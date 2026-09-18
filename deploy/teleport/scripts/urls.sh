@@ -8,6 +8,6 @@ ui::table "WHAT|URL|NOTE" \
   "GitHub SSO callback|https://$PROXY_ADDR/v1/webapi/github/callback|paste into your GitHub OAuth App" \
   "httpbin app|https://httpbin.$PROXY_ADDR|needs dev-app role" \
   "fake cloud console|https://cloud-console.$PROXY_ADDR|needs prod-app role" \
-  "tsh|make login|GitHub SSO if configured, else headless local login (USER_NAME=alice)" \
-  "MCP server (port-forward)|http://localhost:18380/mcp|make port-forward SVC=mcp" \
-  "Access broker (port-forward)|http://localhost:18381/v1/requests|make port-forward SVC=broker"
+  "tsh|make teleport-login|GitHub SSO if configured, else headless local login (USER_NAME=alice)" \
+  "MCP server (port-forward)|http://localhost:18380/mcp|make teleport-port-forward SVC=mcp" \
+  "Access broker (port-forward)|http://localhost:18381/v1/requests|make teleport-port-forward SVC=broker"

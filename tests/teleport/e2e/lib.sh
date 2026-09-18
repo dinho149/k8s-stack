@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for the tsh end-to-end scenarios. Each script gets its own TELEPORT_HOME so users
-# never share a profile. Requires: make tsh and seeded credentials (make up / make seed-test-users).
+# never share a profile. Requires: make teleport-tsh and seeded credentials (make teleport-up / make teleport-seed-test-users).
 set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # _common.sh owns the TLS policy (TSH_INSECURE_FLAG only for STACK=local against the kind proxy), STATE_DIR and UI_LOG_DIR.
@@ -9,8 +9,8 @@ source "$REPO_ROOT/deploy/teleport/scripts/_common.sh"
 # shellcheck source=../../deploy/teleport/scripts/lib/tsh-login.sh
 source "$REPO_ROOT/deploy/teleport/scripts/lib/tsh-login.sh"
 TCTL="$REPO_ROOT/deploy/teleport/scripts/tctl.sh"
-[[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make tsh)"
-[[ -f "$USERS_JSON" ]] || ui::die ".dogfood/teleport/state/users.json missing (make up, or: make seed-test-users)"
+[[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make teleport-tsh)"
+[[ -f "$USERS_JSON" ]] || ui::die ".dogfood/teleport/state/users.json missing (make teleport-up, or: make teleport-seed-test-users)"
 
 # e2e::login <user> -> fresh TELEPORT_HOME per user (profiles never shared), headless password + TOTP login
 e2e::login() {

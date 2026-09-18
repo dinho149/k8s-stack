@@ -3,8 +3,8 @@
 #
 # Writes .dogfood/teleport/tls/teleport.{crt,key} (gitignored) for teleport.127.0.0.1.nip.io and
 # *.teleport.127.0.0.1.nip.io; Pulumi mounts them as Secret teleport-local-tls (tls.mode=local-files).
-# Optional. LOCAL_TLS=ask (default): one question on the first `make up`, the answer is remembered
-# (.dogfood/teleport/tls/.skipped). LOCAL_TLS=0: never. LOCAL_TLS=1 (what `make tls` uses): yes, without asking.
+# Optional. LOCAL_TLS=ask (default): one question on the first `make teleport-up`, the answer is remembered
+# (.dogfood/teleport/tls/.skipped). LOCAL_TLS=0: never. LOCAL_TLS=1 (what `make teleport-tls` uses): yes, without asking.
 # Without mkcert, or without a terminal to ask for consent, the proxy keeps its self-signed certificate.
 # Never installs packages or touches the trust store unless a person on a real terminal said yes.
 source "$(dirname "$0")/_common.sh"
@@ -19,9 +19,9 @@ interactive() { [[ -t 0 && -t 1 && -z "${CI:-}" ]]; }
 self_signed_hint() {
   ui::warn "the proxy will use a self-signed certificate: browsers show a warning for https://$PROXY_ADDR"
   ui::info "install mkcert (macOS: brew install mkcert; Firefox also needs: brew install nss; Linux: apt install mkcert libnss3-tools)"
-  ui::info "then: make tls && make deploy"
+  ui::info "then: make teleport-tls && make teleport-deploy"
 }
-skip() { ui::info "TLS: $1 — the proxy keeps a self-signed certificate (one browser warning). Opt in any time: make tls && make deploy"; exit 0; }
+skip() { ui::info "TLS: $1 — the proxy keeps a self-signed certificate (one browser warning). Opt in any time: make teleport-tls && make teleport-deploy"; exit 0; }
 case "$mode" in
   0) skip "LOCAL_TLS=0" ;;
   1) rm -f "$skipped" ;;

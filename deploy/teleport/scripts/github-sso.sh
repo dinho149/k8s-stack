@@ -42,4 +42,4 @@ if [[ "$STACK" != "local" ]]; then
   cfg 'teleport:auth.secondFactors[0]' webauthn
   ui::info "auth.localAuth=false, secondFactors=[webauthn] (non-local stack)"
 fi
-ui::ok "stored in Pulumi.$STACK.yaml (secret encrypted). Apply with: make deploy   then: make login"
+ui::ok "stored in Pulumi.$STACK.yaml (secret encrypted). Apply with: make teleport-deploy   then: make teleport-login"
