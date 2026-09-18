@@ -100,6 +100,7 @@ export function enforceInvariants(cfg: StackConfig, stack: string, secrets: Secr
   const allowPreview = ciPreviewEscapeHatch();
 
   if (cfg.insecureLocal && !kind) problems.push("insecureLocal may only be true on platform=kind");
+  if (cfg.tls.mode === "local-files" && !kind) problems.push("tls.mode=local-files (mkcert) may only be used on platform=kind; use cert-manager or acme");
   if (cfg.edition === "enterprise" && !secrets.licensePem) problems.push("edition=enterprise requires the secret teleport:licensePem");
   if (cfg.auth.type === "github" && !cfg.github)
     problems.push("auth.type=github requires teleport:github (clientId, organization, teamsToRoles) and the secret teleport:githubClientSecret");

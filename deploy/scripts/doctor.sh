@@ -24,7 +24,11 @@ if [[ -x "$BIN_DIR/tsh" ]]; then ui::status ok "tsh / tctl" "$("$BIN_DIR/tsh" ve
 if command -v claude >/dev/null 2>&1; then
   ui::status ok "claude code" "$(claude --version 2>/dev/null | head -1) — agent can use your subscription (make agent-cli)"
 else ui::status warn "claude code" "not installed — agent needs ANTHROPIC_API_KEY or 'npm i -g @anthropic-ai/claude-code'"; fi
-if command -v expect >/dev/null 2>&1; then ui::status ok "expect" "present (headless tsh login in e2e)"; else ui::status warn "expect" "missing — e2e tsh logins need it (brew/apt install expect)"; fi
+if command -v expect >/dev/null 2>&1; then ui::status ok "expect" "present (headless tsh login: make login, e2e)"; else ui::status warn "expect" "missing — make login / e2e need it (brew/apt install expect)"; fi
+if command -v mkcert >/dev/null 2>&1; then
+  if [[ -f "$(mkcert -CAROOT 2>/dev/null)/rootCA.pem" ]]; then ui::status ok "mkcert" "CA in $(mkcert -CAROOT)$( [[ -f "$LOCAL_TLS_DIR/teleport.crt" ]] && echo ", local proxy certificate present" || echo " — make tls generates the proxy certificate")"
+  else ui::status warn "mkcert" "installed, root CA not created yet — make tls (asks for your password once)"; fi
+else ui::status warn "mkcert" "not installed — browsers will warn about the self-signed proxy cert (brew install mkcert; make up offers it)"; fi
 for opt in gitleaks kubeconform pre-commit shellcheck hadolint actionlint golangci-lint semgrep trivy; do
   if command -v "$opt" >/dev/null 2>&1; then ui::status ok "$opt" "$(command -v "$opt")"; else ui::status warn "$opt" "optional, used by make lint / pre-commit hooks (brew install $opt)"; fi
 done
@@ -46,7 +50,7 @@ if [[ "$STACK" == "local" ]]; then
   if [[ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]]; then ui::status warn "pulumi passphrase" "PULUMI_CONFIG_PASSPHRASE unset — Makefile defaults to 'local-dev' for STACK=local only"; else ui::status ok "pulumi passphrase" "set"; fi
 elif common::require_cloud_secrets >/dev/null 2>&1; then ui::status ok "pulumi secrets" "stack $STACK: shared backend, non-default secrets"
 else ui::status fail "pulumi secrets" "stack $STACK: file backend or default passphrase — run: make secrets-guard for details"; fail=1; fi
-if getent hosts teleport.127.0.0.1.nip.io >/dev/null 2>&1 || dscacheutil -q host -a name teleport.127.0.0.1.nip.io 2>/dev/null | grep -q 127.0.0.1 || python3 -c 'import socket,sys; sys.exit(0 if socket.gethostbyname("teleport.127.0.0.1.nip.io")=="127.0.0.1" else 1)' 2>/dev/null; then ui::status ok "nip.io DNS" "teleport.127.0.0.1.nip.io → 127.0.0.1"; else ui::status warn "nip.io DNS" "cannot resolve *.nip.io (offline?) — use make hosts for /etc/hosts fallback"; fi
+if getent hosts teleport.127.0.0.1.nip.io >/dev/null 2>&1 || dscacheutil -q host -a name teleport.127.0.0.1.nip.io 2>/dev/null | grep -q 127.0.0.1 || python3 -c 'import socket,sys; sys.exit(0 if socket.gethostbyname("teleport.127.0.0.1.nip.io")=="127.0.0.1" else 1)' 2>/dev/null; then ui::status ok "nip.io DNS" "teleport.127.0.0.1.nip.io → 127.0.0.1"; else ui::status warn "nip.io DNS" "cannot resolve *.nip.io (offline?) — add '127.0.0.1 teleport.127.0.0.1.nip.io' to /etc/hosts"; fi
 if [[ -f "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" ]]; then
   if grep -q 'claudeCodeOauthToken' "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" 2>/dev/null; then ui::status ok "agent auth" "subscription token stored for stack $STACK"
   elif grep -q 'anthropicApiKey' "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" 2>/dev/null; then ui::status ok "agent auth" "API key stored for stack $STACK"

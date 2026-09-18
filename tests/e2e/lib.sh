@@ -1,45 +1,21 @@
 #!/usr/bin/env bash
 # Shared helpers for the tsh end-to-end scenarios. Each script gets its own TELEPORT_HOME so users
-# never share a profile. Requires: make tsh, make seed-test-users (tests/.state/users.json).
+# never share a profile. Requires: make tsh and seeded credentials (make up / make seed-test-users).
 set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-source "$REPO_ROOT/deploy/scripts/lib/ui.sh"
-STACK="${STACK:-local}"
-PROXY_ADDR="${PROXY_ADDR:-teleport.127.0.0.1.nip.io:3080}"
-TSH_BIN="${TSH_BIN:-$REPO_ROOT/bin/tsh}"
-# Same TLS policy as deploy/scripts/_common.sh: skip verification only for the self-signed kind proxy.
-if [[ "$STACK" == "local" && "$PROXY_ADDR" == *.127.0.0.1.nip.io* ]]; then TSH_INSECURE_FLAG="--insecure"
-elif [[ "$PROXY_ADDR" == *.127.0.0.1.nip.io* ]]; then ui::die "PROXY_ADDR=$PROXY_ADDR is the loopback kind proxy but STACK=$STACK is not local"
-else TSH_INSECURE_FLAG=""; fi
-export TSH_INSECURE_FLAG
-USERS_JSON="$REPO_ROOT/tests/.state/users.json"
+# _common.sh owns the TLS policy (TSH_INSECURE_FLAG only for STACK=local against the kind proxy), STATE_DIR and UI_LOG_DIR.
+# shellcheck source=../../deploy/scripts/_common.sh
+source "$REPO_ROOT/deploy/scripts/_common.sh"
+# shellcheck source=../../deploy/scripts/lib/tsh-login.sh
+source "$REPO_ROOT/deploy/scripts/lib/tsh-login.sh"
 TCTL="$REPO_ROOT/deploy/scripts/tctl.sh"
-export UI_LOG_DIR="$REPO_ROOT/.logs"
 [[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make tsh)"
-[[ -f "$USERS_JSON" ]] || ui::die "tests/.state/users.json missing (make seed-test-users)"
+[[ -f "$USERS_JSON" ]] || ui::die "tests/.state/users.json missing (make up, or: make seed-test-users)"
 
-# e2e::login <user> -> sets TELEPORT_HOME and logs in headlessly with password + TOTP
+# e2e::login <user> -> fresh TELEPORT_HOME per user (profiles never shared), headless password + TOTP login
 e2e::login() {
-  local user="$1"
-  export TELEPORT_HOME; TELEPORT_HOME="$(mktemp -d "${TMPDIR:-/tmp}/tsh-$user-XXXX")"
-  local pw code
-  pw="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]]["password"])' "$USERS_JSON" "$user")"
-  # Teleport refuses a TOTP code that was already used: remember only the 30s window index of the last
-  # login (never the code itself) and wait for the next window when it is the same one.
-  local window_file="$UI_LOG_DIR/.totp-window-$user" now window
-  now="$(date +%s)"; window=$(( now / 30 ))
-  if [[ -f "$window_file" && "$(cat "$window_file")" == "$window" ]]; then
-    local wait=$(( 31 - now % 30 ))
-    ui::info "waiting ${wait}s for a fresh TOTP window"
-    sleep "$wait"; window=$(( $(date +%s) / 30 ))
-  fi
-  mkdir -p "$UI_LOG_DIR"; printf '%s' "$window" > "$window_file"
-  code="$(go run -C "$REPO_ROOT/tests/tools" ./totp -users "$USERS_JSON" -user "$user")"
-  # tsh insists on a terminal for password prompts, so drive it with expect (macOS ships it; CI installs it).
-  command -v expect >/dev/null || ui::die "expect is required for headless tsh login (apt-get install expect / brew install expect)"
-  TSH_BIN="$TSH_BIN" TSH_INSECURE_FLAG="$TSH_INSECURE_FLAG" PROXY_ADDR="$PROXY_ADDR" TSH_USER="$user" TSH_PASSWORD="$pw" TSH_OTP="$code" expect -f "$REPO_ROOT/tests/e2e/tsh-login.exp" >"$UI_LOG_DIR/tsh-login-$user.log" 2>&1 \
-    || { ui::fail "login as $user failed"; tail -20 "$UI_LOG_DIR/tsh-login-$user.log"; return 1; }
-  ui::ok "logged in as $user"
+  export TELEPORT_HOME; TELEPORT_HOME="$(mktemp -d "${TMPDIR:-/tmp}/tsh-$1-XXXX")"
+  tshlogin::login "$1"
 }
 # shellcheck disable=SC2086 # TSH_INSECURE_FLAG is empty or --insecure, decided once above
 e2e::tsh() { "$TSH_BIN" $TSH_INSECURE_FLAG --proxy "$PROXY_ADDR" "$@"; }

@@ -54,7 +54,7 @@ call `SetAccessRequestState` and the MCP server create pending requests on a use
 
 | Stack | Platform | Exposure | TLS | Backend | Login |
 |---|---|---|---|---|---|
-| `local` | kind | NodePort 30080 → host 3080 (+ fixed 30081 for the in-cluster port) | self-signed (`tsh --insecure`) | standalone PVC | GitHub SSO (once configured) or local, OTP |
+| `local` | kind | NodePort 30080 → host 3080 (+ fixed 30081 for the in-cluster port) | mkcert (browser-trusted), self-signed fallback; `tsh --insecure` in-cluster and on the host | standalone PVC | GitHub SSO (once configured) or local, OTP |
 | `dev-eks` / `dev-gke` / `dev-aks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | standalone by default, `aws`/`gcp`/`azure` chartMode when backends exist | GitHub SSO + WebAuthn only, no local auth |
 | `prod-eks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | `aws` chartMode (audit log mirrored to stdout) | GitHub SSO + WebAuthn only, no local auth |
 

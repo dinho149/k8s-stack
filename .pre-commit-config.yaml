@@ -98,7 +98,7 @@ repos:
         entry: '(tsh|tctl)[^\n]*--insecure|curl[^\n]* -[a-zA-Z]*k[a-zA-Z]* '
         types: [text]
         # index.ts builds the login hint conditionally on profile.teleport.insecure (kind only).
-        exclude: ^(deploy/scripts/_common\.sh|tests/e2e/lib\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
+        exclude: ^(deploy/scripts/_common\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
       - id: npm-typecheck
         name: npm run typecheck (workspaces)
         language: system

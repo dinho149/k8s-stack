@@ -8,7 +8,8 @@ export const kindDefaults: DeepPartial<StackConfigInput> = {
   publicAddr: "teleport.127.0.0.1.nip.io:3080",
   edition: "community",
   exposure: { type: "nodeport", nodePort: 30080 },
-  tls: { mode: "self-signed" },
+  // Browser-trusted certificate from mkcert (make tls / make up); self-signed when the files are absent.
+  tls: { mode: "local-files", certFile: "../.state/tls/teleport.crt", keyFile: "../.state/tls/teleport.key", caFile: "../.state/tls/ca.crt" },
   auth: { type: "github", secondFactors: ["otp"], localAuth: true },
   chartMode: { mode: "standalone", volumeSize: "2Gi" },
   images: { registry: "", tag: "dev", pullPolicy: "IfNotPresent" },

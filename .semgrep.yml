@@ -34,17 +34,17 @@ rules:
     languages: [generic]
     severity: ERROR
     message: >-
-      Do not hard-code --insecure. Use $TSH_INSECURE_FLAG from deploy/scripts/_common.sh (or tests/e2e/lib.sh),
-      which is set only for STACK=local against the self-signed kind proxy.
+      Do not hard-code --insecure. Use $TSH_INSECURE_FLAG from deploy/scripts/_common.sh,
+      which is set only for STACK=local against the kind proxy.
     pattern-either:
       - pattern: tsh --insecure
       - pattern: tctl --insecure
       - pattern: tsh $... --insecure
     paths:
       include: ["deploy/**", "tests/**", "Makefile", "infra/**/*.ts", ".github/**"]
-      # _common.sh / lib.sh own the guarded variable; index.ts renders the login hint conditionally on
+      # _common.sh owns the guarded variable; index.ts renders the login hint conditionally on
       # profile.teleport.insecure, which the profile invariants restrict to the kind platform.
-      exclude: ["deploy/scripts/_common.sh", "tests/e2e/lib.sh", "infra/teleport/index.ts"]
+      exclude: ["deploy/scripts/_common.sh", "infra/teleport/index.ts"]
 
   - id: k8s-teleport-postgres-trust-auth
     languages: [generic]

@@ -24,8 +24,8 @@ export UI_LOG_DIR="$REPO_ROOT/.logs"
 if [[ "$KIND_CLUSTER" == "kind" ]]; then ui::die "refusing to operate on the default kind cluster 'kind' (KIND_CLUSTER=kind)"; fi
 
 # ---------------------------------------------------------------------------- TLS verification policy
-# The kind stack serves a self-signed certificate on *.127.0.0.1.nip.io, so tsh/tctl/curl must skip
-# verification there. That is the ONLY combination where skipping is allowed: STACK=local AND the proxy
+# The kind stack serves either the chart's self-signed certificate or one from the developer's mkcert CA on
+# *.127.0.0.1.nip.io; neither is trusted by the in-cluster components, so tsh/tctl/curl skip verification there. That is the ONLY combination where skipping is allowed: STACK=local AND the proxy
 # is the loopback nip.io host. Any other stack, or a local stack pointed at a real host, verifies TLS.
 # Scripts must use $TSH_INSECURE_FLAG / $CURL_INSECURE_FLAG and never spell --insecure / -k themselves
 # (enforced by .semgrep.yml and the tsh-insecure-guard pre-commit hook).
@@ -40,6 +40,33 @@ fi
 export TSH_INSECURE_FLAG CURL_INSECURE_FLAG
 # shellcheck disable=SC2089 # intentionally a string that is word-split when invoked as $TSH
 TSH="${TSH:-$BIN_DIR/tsh ${TSH_INSECURE_FLAG:+$TSH_INSECURE_FLAG }--proxy $PROXY_ADDR}"
+
+# mkcert (deploy/scripts/local-tls.sh): the local certificate files and whether the browser trusts them.
+LOCAL_TLS_DIR="$REPO_ROOT/infra/.state/tls"
+# 0 when the mkcert root CA exists and is in the system trust store (what `mkcert -install` does).
+common::mkcert_ca_trusted() {
+  command -v mkcert >/dev/null 2>&1 || return 1
+  local root; root="$(mkcert -CAROOT 2>/dev/null)/rootCA.pem"
+  [[ -f "$root" ]] || return 1
+  case "$(uname -s)" in
+    Darwin) security find-certificate -c mkcert /Library/Keychains/System.keychain >/dev/null 2>&1 ;;
+    *) ls /usr/local/share/ca-certificates/mkcert_*.crt /etc/pki/ca-trust/source/anchors/mkcert_*.crt >/dev/null 2>&1 ;;
+  esac
+}
+# 0 when the local proxy serves a certificate the browser trusts: the files exist, verify against the
+# mkcert root, and that root is installed. Used for wording only; TLS verification policy is above.
+common::tls_trusted() {
+  [[ "$STACK" == "local" && -f "$LOCAL_TLS_DIR/teleport.crt" ]] || return 1
+  common::mkcert_ca_trusted && command -v openssl >/dev/null 2>&1 || return 1
+  openssl verify -CAfile "$(mkcert -CAROOT 2>/dev/null)/rootCA.pem" "$LOCAL_TLS_DIR/teleport.crt" >/dev/null 2>&1
+}
+# One line describing the browser's view of the local proxy certificate (summary box, urls, web-login).
+common::tls_note() {
+  if [[ "$STACK" != "local" ]]; then echo "verified TLS"
+  elif common::tls_trusted; then echo "trusted certificate (mkcert)"
+  elif [[ -f "$LOCAL_TLS_DIR/teleport.crt" ]]; then echo "mkcert certificate, root CA not trusted yet: make tls"
+  else echo "self-signed: accept the browser warning, or: make tls && make deploy"; fi
+}
 
 # ---------------------------------------------------------------------------- Pulumi secrets policy
 # The file backend + a well-known passphrase are fine for the throwaway kind stack and nothing else.

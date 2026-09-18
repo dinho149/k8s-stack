@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/gravitational/teleport/api v0.0.0-20260916153325-27eb07217a0e
+	github.com/gravitational/trace v1.5.4
 	github.com/pquerna/otp v1.5.0
 )
 
@@ -23,7 +24,6 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gravitational/trace v1.5.4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
