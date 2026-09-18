@@ -2,7 +2,7 @@
 # per ecosystem; majors (and anything security-related) arrive individually. Docker updates also refresh
 # the @sha256 digests that pin every base image.
 #
-# npm is one entry at the repo root: the workspaces (infra/teleport, services/access-agent) share the root
+# npm is one entry at the repo root: every workspace (packages/*, services/*, infra/teleport) shares the root
 # package-lock.json, and per-workspace entries only edit the workspace package.json without the lockfile, so
 # every PR they open fails `npm ci` (lock file out of sync).
 version: 2
@@ -29,21 +29,7 @@ updates:
         versions: [">=7"]
 
   - package-ecosystem: gomod
-    directory: /services/teleport-access
-    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
-    groups:
-      gomod-minor-patch:
-        update-types: [minor, patch]
-    labels: [dependencies, go]
-  - package-ecosystem: gomod
-    directory: /tests/tools
-    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
-    groups:
-      gomod-minor-patch:
-        update-types: [minor, patch]
-    labels: [dependencies, go]
-  - package-ecosystem: gomod
-    directory: /tests/integration
+    directory: /
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
     groups:
       gomod-minor-patch:
@@ -51,7 +37,7 @@ updates:
     labels: [dependencies, go]
 
   - package-ecosystem: docker
-    directory: /services/teleport-access
+    directory: /deploy/teleport/images/teleport-access
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
     labels: [dependencies, docker]
     ignore:
@@ -65,6 +51,23 @@ updates:
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
     labels: [dependencies, docker]
   - package-ecosystem: docker
-    directory: /deploy/images/ssh-node
+    directory: /deploy/teleport/images/ssh-node
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  # Dogfood images
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /packages/portal
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /packages/backend
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /services/agent
     schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
     labels: [dependencies, docker]

@@ -45,7 +45,8 @@ jobs:
               - node_modules
               - "**/node_modules"
               - "**/dist"
-              - tests/policy/rendered
+              - tests/teleport/policy/rendered
+              - .dogfood
       - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           category: "/language:${{ matrix.language }}"

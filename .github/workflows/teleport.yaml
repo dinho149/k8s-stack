@@ -1,24 +1,48 @@
-name: ci
+name: teleport
 
+# Checks for the Teleport access layer (infra/teleport, cmd/teleport-access + internal/teleportaccess,
+# services/access-agent, deploy/teleport, tests/teleport). The Dogfood-wide gate is checks.yaml
+# (`make ship-gate`), which already vets/tests the whole Go module and every npm workspace; this workflow
+# adds the security scanners, the offline CR render, cloud-stack previews and the kind end-to-end run.
 on:
   push:
     branches: [main]
+    paths: &paths
+      - infra/teleport/**
+      - services/access-agent/**
+      - cmd/teleport-access/**
+      - internal/teleportaccess/**
+      - tests/teleport/**
+      - deploy/teleport/**
+      - deploy/kind/config.yaml
+      - scripts/bootstrap.sh
+      - scripts/local.py
+      - go.mod
+      - go.sum
+      - package.json
+      - package-lock.json
+      - .pre-commit-config.yaml
+      - .semgrep.yml
+      - .golangci.yml
+      - .hadolint.yaml
+      - .github/workflows/teleport.yaml
   pull_request:
+    paths: *paths
 
 # Least privilege by default; each job grants only what it needs.
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: teleport-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   TELEPORT_VERSION: "18.11.1"
   # Throwaway passphrase for the kind stack and for CI previews of the cloud stacks (file backend).
   # The committed Pulumi.<stack>.yaml files carry an `encryptionsalt` minted with the local dev passphrase;
-  # they hold no secret values (cloud stacks must use a KMS provider, enforced by `make secrets-guard`), so CI
-  # opens them with that same throwaway passphrase to render previews and the kind e2e stack.
+  # they hold no secret values (cloud stacks must use a KMS provider, enforced by make teleport-secrets-guard),
+  # so CI opens them with that same throwaway passphrase to render previews and the kind e2e stack.
   PULUMI_CONFIG_PASSPHRASE: local-dev
   NO_COLOR: "1"
   GOTOOLCHAIN: auto
@@ -34,28 +58,28 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
-      - run: npm ci --no-fund
+        with: { go-version-file: go.mod, cache-dependency-path: go.sum }
+      - run: npm ci --no-fund --ignore-scripts
       - name: npm audit (high and above fails)
         run: npm audit --audit-level=high
-      - name: Typecheck + unit tests (Pulumi, agent)
+      - name: Typecheck + lint + unit tests (Pulumi, agent)
         run: |
-          npm run typecheck --workspaces --if-present
-          npm run lint --workspaces --if-present
-          npm test --workspaces --if-present
+          npm run typecheck --workspace @dogfood/teleport-infra --workspace @dogfood/access-agent
+          npm run lint --workspace @dogfood/access-agent
+          npm test --workspace @dogfood/teleport-infra --workspace @dogfood/access-agent
       - name: Go vet + unit tests
         run: |
-          go -C services/teleport-access vet ./...
-          go -C services/teleport-access test ./...
-          go -C tests/tools build ./...
-          go -C tests/integration vet -tags=integration ./...
+          go vet ./cmd/... ./internal/...
+          go test -race ./cmd/... ./internal/...
+          go build ./tests/teleport/tools/...
+          go vet -tags=integration ./tests/teleport/...
       - name: Shell syntax
-        run: for f in deploy/scripts/*.sh deploy/scripts/lib/*.sh tests/e2e/*.sh; do bash -n "$f"; done
+        run: for f in deploy/teleport/scripts/*.sh deploy/teleport/scripts/lib/*.sh tests/teleport/e2e/*.sh; do bash -n "$f"; done
       - name: Render Teleport CRs offline
-        run: make render
+        run: make teleport-render
 
   pre-commit:
-    # Same hooks developers run locally (make hooks); catches `git commit --no-verify`.
+    # Same hooks developers run locally (make teleport-hooks); catches `git commit --no-verify`.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -67,8 +91,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
-      - run: npm ci --no-fund
+        with: { go-version-file: go.mod, cache-dependency-path: go.sum }
+      - run: npm ci --no-fund --ignore-scripts
       - name: Cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -90,29 +114,15 @@ jobs:
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with: { args: -color }
+      # Scoped to the Teleport images: the Dogfood Dockerfiles are linted by their own gate.
       - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
-        with: { recursive: true, dockerfile: "**/Dockerfile", config: .hadolint.yaml, failure-threshold: warning }
+        with: { dockerfile: deploy/teleport/images/teleport-access/Dockerfile, config: .hadolint.yaml, failure-threshold: warning }
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with: { dockerfile: deploy/teleport/images/ssh-node/Dockerfile, config: .hadolint.yaml, failure-threshold: warning }
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with: { dockerfile: services/access-agent/Dockerfile, config: .hadolint.yaml, failure-threshold: warning }
 
   govulncheck:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        module: [services/teleport-access, tests/tools]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }
-      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
-        with:
-          work-dir: ${{ matrix.module }}
-          go-version-input: "1.26"
-          go-package: ./...
-          repo-checkout: false
-
-  govulncheck-integration:
-    # Build-tagged module: the action cannot pass -tags, so run the CLI directly.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,9 +130,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+        with: { go-version-file: go.mod, cache-dependency-path: go.sum }
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-      - run: govulncheck -C tests/integration -tags=integration ./...
+      - run: govulncheck ./...
+      # Build-tagged integration tests are a separate binary as far as govulncheck is concerned.
+      - run: govulncheck -tags=integration ./tests/teleport/...
 
   osv-scanner:
     runs-on: ubuntu-latest
@@ -137,9 +149,7 @@ jobs:
         with:
           scan-args: |-
             --lockfile=package-lock.json
-            --lockfile=services/teleport-access/go.mod
-            --lockfile=tests/tools/go.mod
-            --lockfile=tests/integration/go.mod
+            --lockfile=go.mod
             --format=sarif
             --output=osv.sarif
         continue-on-error: true
@@ -148,9 +158,7 @@ jobs:
         with:
           scan-args: |-
             --lockfile=package-lock.json
-            --lockfile=services/teleport-access/go.mod
-            --lockfile=tests/tools/go.mod
-            --lockfile=tests/integration/go.mod
+            --lockfile=go.mod
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && hashFiles('osv.sarif') != ''
         continue-on-error: true
@@ -166,11 +174,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - name: semgrep (repo rules + registry packs)
+      - name: semgrep (repo rules + registry packs, Teleport paths)
         run: |
           semgrep scan --metrics=off --error \
             --config .semgrep.yml --config p/golang --config p/typescript --config p/dockerfile \
             --config p/github-actions --config p/kubernetes \
+            --include 'cmd/teleport-access/**' --include 'internal/teleportaccess/**' --include 'tests/teleport/**' \
+            --include 'deploy/teleport/**' --include 'infra/teleport/**' --include 'services/access-agent/**' \
+            --include '.github/workflows/teleport*.yaml' --include 'Makefile' --include 'scripts/local.py' \
             --sarif --output semgrep.sarif
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && hashFiles('semgrep.sarif') != ''
@@ -187,30 +198,39 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
-      - run: npm ci --no-fund
+      - run: npm ci --no-fund --ignore-scripts
       - name: Render manifests offline
-        run: make render
+        run: make teleport-render
       # The action's pinned checkov (2.0.x) accepts one framework per run and always writes ./results.sarif,
       # so: one step per framework, rename the report after each, upload each under its own category.
       - name: checkov (rendered Kubernetes manifests)
         uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
-          directory: tests/policy/rendered
+          directory: tests/teleport/policy/rendered
           framework: kubernetes
           quiet: true
           output_format: sarif
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-k8s.sarif; fi
-      - name: checkov (Dockerfiles)
+      - name: checkov (Teleport image Dockerfiles)
         uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
-          directory: .
+          directory: deploy/teleport
           framework: dockerfile
-          skip_path: node_modules,infra/.state,tests/.state,.logs
           quiet: true
           output_format: sarif
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-dockerfile.sarif; fi
+      - name: checkov (access-agent Dockerfile)
+        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
+        with:
+          directory: services/access-agent
+          framework: dockerfile
+          skip_path: node_modules,dist
+          quiet: true
+          output_format: sarif
+      - if: always()
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-agent-dockerfile.sarif; fi
       - name: checkov (GitHub workflows)
         uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
         with:
@@ -228,6 +248,10 @@ jobs:
         if: always() && hashFiles('checkov-dockerfile.sarif') != ''
         continue-on-error: true
         with: { sarif_file: checkov-dockerfile.sarif, category: checkov-dockerfile }
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('checkov-agent-dockerfile.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: checkov-agent-dockerfile.sarif, category: checkov-agent-dockerfile }
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && hashFiles('checkov-workflows.sarif') != ''
         continue-on-error: true
@@ -248,12 +272,15 @@ jobs:
           comment-summary-in-pr: on-failure
 
   repo-scan:
-    # Trivy over the working tree: secrets, misconfigurations (Dockerfiles, workflows, kind config) and
-    # vulnerable dependencies in the lockfiles.
+    # Trivy over the Teleport trees: secrets, misconfigurations (Dockerfiles, workflows, kind config) and
+    # vulnerable dependencies in the shared lockfiles.
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
+    env:
+      # Dogfood's own trees are outside this workflow's remit (their scanners live with their gate).
+      TRIVY_SKIP_DIRS: node_modules,.dogfood,packages,services/agent,deploy/charts,infra/aws,infra/gcp,infra/data,catalog,examples,configs,environments,scripts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -268,7 +295,8 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: false
           exit-code: "0"
-          skip-dirs: node_modules,infra/.state,tests/.state,.logs
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          skip-files: Dockerfile
           format: sarif
           output: trivy-fs.sarif
       - name: trivy fs (gate on HIGH/CRITICAL)
@@ -280,7 +308,8 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: false
           exit-code: "1"
-          skip-dirs: node_modules,infra/.state,tests/.state,.logs
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          skip-files: Dockerfile
           format: table
           skip-setup-trivy: true
           cache: "false"
@@ -298,9 +327,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: teleport-access, context: services/teleport-access }
-          - { name: access-agent, context: services/access-agent }
-          - { name: ssh-node, context: deploy/images/ssh-node }
+          # teleport-access is built from the repository root (the Go code lives in the root module).
+          - { name: teleport-access, context: ., file: deploy/teleport/images/teleport-access/Dockerfile }
+          - { name: access-agent, context: services/access-agent, file: services/access-agent/Dockerfile }
+          - { name: ssh-node, context: deploy/teleport/images/ssh-node, file: deploy/teleport/images/ssh-node/Dockerfile }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
@@ -309,6 +339,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           # The agent needs the repo root as the `lockfile` context (npm workspace lockfile); harmless for the rest.
           build-contexts: lockfile=.
           push: false
@@ -367,62 +398,73 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
       - uses: pulumi/setup-pulumi@b374ceb6168550de27c6eba92e01c1a774040e11 # v2.0.0
+      # The Dogfood kind config (no default CNI); a preview only needs the API server, not Ready nodes.
       - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
-        with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
-      - run: npm ci --no-fund
+        with: { cluster_name: dogfood-local, config: deploy/kind/config.yaml, wait: 0s }
+      - run: npm ci --no-fund --ignore-scripts
       - name: pulumi preview (rendered against the kind context)
         # CI_PREVIEW=1 skips the cloud secrets guard for `preview` only (file backend + throwaway passphrase);
-        # make preview exports TELEPORT_ALLOW_KIND_CONTEXT=1 so the kind-* kubeContext invariant is relaxed.
+        # preview.sh exports TELEPORT_ALLOW_KIND_CONTEXT=1 so the kind-* kubeContext invariant is relaxed.
         env: { CI_PREVIEW: "1" }
-        run: make preview STACK=${{ matrix.stack }} PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local"
+        run: make teleport-preview STACK=${{ matrix.stack }} PULUMI_ARGS="--config teleport:kubeContext=kind-dogfood-local"
 
   kind-e2e:
     runs-on: ubuntu-latest
     needs: lint-and-unit
     permissions:
       contents: read
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+        with: { go-version-file: go.mod, cache-dependency-path: go.sum }
       - uses: pulumi/setup-pulumi@b374ceb6168550de27c6eba92e01c1a774040e11 # v2.0.0
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489de35d3 # v4.3.0
+        with: { version: v3.18.6 }
+      # The same cluster shape Dogfood's bootstrap creates: the kind config with Teleport's 3080 mapping and
+      # Cilium as the CNI (scripts/bootstrap.sh installs the rest of the platform, which the e2e does not need).
       - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
-        with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
-      - run: npm ci --no-fund
+        with: { cluster_name: dogfood-local, config: deploy/kind/config.yaml, wait: 0s }
+      - name: Install Cilium (as scripts/bootstrap.sh does)
+        run: |
+          helm upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.18.3 --namespace kube-system \
+            --set operator.replicas=1 --set ipam.mode=kubernetes --set kubeProxyReplacement=false \
+            --set policyCIDRMatchMode=nodes --wait --timeout 5m
+          kubectl --context kind-dogfood-local wait --for=condition=Ready nodes --all --timeout=180s
+      - run: npm ci --no-fund --ignore-scripts
       - name: Install tsh/tctl + expect
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq expect
-          make tsh
+          make teleport-tsh
       - name: Bring the stack up
-        run: make images deploy wait
+        run: make teleport-images teleport-deploy teleport-wait
       - name: Seed test users
-        run: make seed-test-users
+        run: make teleport-seed-test-users
       - name: Integration tests
-        run: make test-integration
+        run: make teleport-test-integration
       - name: tsh end-to-end
-        run: make test-e2e
+        run: make teleport-test-e2e
       - name: Collect diagnostics
         if: failure()
         run: |
-          mkdir -p .logs/diag
-          kubectl --context kind-teleport-local get pods -A > .logs/diag/pods.txt 2>&1 || true
+          mkdir -p .dogfood/logs/teleport/diag
+          kubectl --context kind-dogfood-local get pods -A > .dogfood/logs/teleport/diag/pods.txt 2>&1 || true
           for ns in teleport teleport-agent teleport-dummies teleport-access; do
-            kubectl --context kind-teleport-local -n "$ns" get events --sort-by=.lastTimestamp > ".logs/diag/events-$ns.txt" 2>&1 || true
+            kubectl --context kind-dogfood-local -n "$ns" get events --sort-by=.lastTimestamp > ".dogfood/logs/teleport/diag/events-$ns.txt" 2>&1 || true
           done
-          kubectl --context kind-teleport-local -n teleport logs deploy/teleport-cluster-operator --tail=300 > .logs/diag/operator.log 2>&1 || true
-          kubectl --context kind-teleport-local -n teleport-access logs deploy/access-broker --all-containers --tail=300 > .logs/diag/broker.log 2>&1 || true
-          kubectl --context kind-teleport-local -n teleport-access logs deploy/teleport-mcp --all-containers --tail=300 > .logs/diag/mcp.log 2>&1 || true
-          # Never ship credentials: tests/.state and identities stay out of the artifact.
-          find .logs -type f \( -name '*.identity' -o -name 'users.json' -o -name '.totp-*' \) -delete || true
+          kubectl --context kind-dogfood-local -n teleport logs deploy/teleport-cluster-operator --tail=300 > .dogfood/logs/teleport/diag/operator.log 2>&1 || true
+          kubectl --context kind-dogfood-local -n teleport-access logs deploy/access-broker --all-containers --tail=300 > .dogfood/logs/teleport/diag/broker.log 2>&1 || true
+          kubectl --context kind-dogfood-local -n teleport-access logs deploy/teleport-mcp --all-containers --tail=300 > .dogfood/logs/teleport/diag/mcp.log 2>&1 || true
+          # Never ship credentials: seeded users and identities stay out of the artifact.
+          find .dogfood/logs -type f \( -name '*.identity' -o -name 'users.json' -o -name '.totp-*' \) -delete || true
       - name: Upload diagnostics (restricted artifact, 5 days)
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kind-e2e-logs
-          path: .logs
+          path: .dogfood/logs/teleport
           retention-days: 5
           if-no-files-found: ignore

@@ -1,6 +1,7 @@
-# golangci-lint v2 configuration shared by the three Go modules
-# (cmd/teleport-access + internal/teleportaccess, tests/teleport/tools, tests/teleport/integration). Run per module:
-#   cd cmd/teleport-access + internal/teleportaccess && golangci-lint run --config=../../.golangci.yml ./...
+# golangci-lint v2 configuration for the root Go module (cmd/, internal/, tests/teleport/tools) and the
+# build-tagged integration tests:
+#   golangci-lint run ./...
+#   golangci-lint run --build-tags=integration ./tests/teleport/integration/...
 version: "2"
 
 run:

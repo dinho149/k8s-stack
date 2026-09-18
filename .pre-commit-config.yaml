@@ -1,5 +1,8 @@
-# Local guardrails, mirrored in CI (.github/workflows/ci.yml job `pre-commit` runs `pre-commit run --all-files`,
-# so a `git commit --no-verify` is still caught). Install with `make hooks`.
+# Local guardrails, mirrored in CI (.github/workflows/teleport.yaml job `pre-commit` runs `pre-commit run --all-files`,
+# so a `git commit --no-verify` is still caught). Install with `make teleport-hooks`.
+#
+# Imported with the Teleport access layer: the Go hooks cover the whole root module, the shell/npm/semgrep
+# hooks are scoped to the Teleport trees for now (widen them when the Dogfood trees adopt the same rules).
 #
 # pre-commit stage: fast checks (secrets, syntax, formatting, linters).
 # pre-push stage:   slower checks (semgrep with the registry packs, offline CR rendering + kubeconform).
@@ -7,7 +10,7 @@
 # Revisions are pinned tags; bump them with `pre-commit autoupdate` (and keep .tool-versions in step).
 default_stages: [pre-commit]
 minimum_pre_commit_version: "4.0.0"
-exclude: ^(node_modules/|.*/node_modules/|infra/\.state/|tests/\.state/|tests/teleport/policy/(rendered|schemas)/|\.logs/|bin/|package-lock\.json$)
+exclude: ^(node_modules/|.*/node_modules/|\.dogfood/|tests/teleport/policy/(rendered|schemas)/|bin/|package-lock\.json$|packages/desktop/)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -44,6 +47,7 @@ repos:
     hooks:
       - id: hadolint-docker
         entry: ghcr.io/hadolint/hadolint:v2.15.1 hadolint   # pinned image (the upstream hook uses :latest)
+        files: ^(deploy/teleport/images/.*/Dockerfile|services/access-agent/Dockerfile)$
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
@@ -54,18 +58,14 @@ repos:
     rev: v2.13.2
     hooks:
       - id: golangci-lint-config-verify
-      # One invocation per Go module; the shared config lives at the repo root.
+      # One Go module (the repo root); the build-tagged integration tests need their own invocation.
       - id: golangci-lint-full
-        name: golangci-lint (cmd/teleport-access + internal/teleportaccess)
-        entry: bash -c 'cd cmd/teleport-access + internal/teleportaccess && exec golangci-lint run --config=../../.golangci.yml ./...'
-        files: ^cmd/teleport-access + internal/teleportaccess/
-      - id: golangci-lint-full
-        name: golangci-lint (tests/teleport/tools)
-        entry: bash -c 'cd tests/teleport/tools && exec golangci-lint run --config=../../.golangci.yml ./...'
-        files: ^tests/teleport/tools/
+        name: golangci-lint (root module)
+        entry: golangci-lint run ./...
+        files: ^(cmd|internal|tests/teleport/tools)/
       - id: golangci-lint-full
         name: golangci-lint (tests/teleport/integration)
-        entry: bash -c 'cd tests/teleport/integration && exec golangci-lint run --config=../../.golangci.yml --build-tags=integration ./...'
+        entry: golangci-lint run --build-tags=integration ./tests/teleport/integration/...
         files: ^tests/teleport/integration/
 
   - repo: https://github.com/semgrep/pre-commit
@@ -102,19 +102,19 @@ repos:
       - id: npm-typecheck
         name: npm run typecheck (workspaces)
         language: system
-        entry: npm run typecheck --workspaces --if-present
+        entry: npm run typecheck --workspace @dogfood/teleport-infra --workspace @dogfood/access-agent
         files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
         pass_filenames: false
       - id: npm-lint
         name: npm run lint (workspaces)
         language: system
-        entry: npm run lint --workspaces --if-present
+        entry: npm run lint --workspace @dogfood/access-agent
         files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
         pass_filenames: false
       - id: make-render
-        name: make render (offline CRs + kubeconform)
+        name: make teleport-render (offline CRs + kubeconform)
         language: system
-        entry: make --no-print-directory render
+        entry: make --no-print-directory teleport-render
         stages: [pre-push]
         pass_filenames: false
         always_run: true

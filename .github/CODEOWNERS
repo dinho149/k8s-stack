@@ -2,7 +2,7 @@
 # for every path that defines who can get what access, and for everything that ships to production.
 #
 # @CHANGE-ME-security-owner is a placeholder: replace it with a real GitHub team (@org/security) or user
-# before running `make repo-security REPO=owner/name`, otherwise merges to main are blocked for everyone.
+# before running `deploy/teleport/scripts/repo-security.sh owner/name`, otherwise merges to main are blocked for everyone.
 
 # Access policy and role rendering (who may request what, what is auto-approved)
 /infra/teleport/src/policy/**                      @CHANGE-ME-security-owner
@@ -10,10 +10,10 @@
 /infra/teleport/Pulumi.*.yaml                      @CHANGE-ME-security-owner
 
 # Broker decision engine, approval API and MCP server (identity binding, auto-approve logic)
-/services/teleport-access/internal/policy/**       @CHANGE-ME-security-owner
-/services/teleport-access/internal/broker/**       @CHANGE-ME-security-owner
-/services/teleport-access/internal/mcp/**          @CHANGE-ME-security-owner
-/services/teleport-access/internal/assertion/**    @CHANGE-ME-security-owner
+/internal/teleportaccess/policy/**                 @CHANGE-ME-security-owner
+/internal/teleportaccess/broker/**                 @CHANGE-ME-security-owner
+/internal/teleportaccess/mcp/**                    @CHANGE-ME-security-owner
+/internal/teleportaccess/assertion/**              @CHANGE-ME-security-owner
 
 # Chat identity resolution (who a Slack/Teams/GChat user is in Teleport)
 /services/access-agent/src/identity/**             @CHANGE-ME-security-owner
@@ -23,8 +23,9 @@
 /.github/**                                        @CHANGE-ME-security-owner
 **/Dockerfile                                      @CHANGE-ME-security-owner
 **/.dockerignore                                   @CHANGE-ME-security-owner
-/deploy/scripts/**                                 @CHANGE-ME-security-owner
+/deploy/teleport/scripts/**                        @CHANGE-ME-security-owner
 /Makefile                                          @CHANGE-ME-security-owner
+/scripts/local.py                                  @CHANGE-ME-security-owner
 /.pre-commit-config.yaml                           @CHANGE-ME-security-owner
 /.semgrep.yml                                      @CHANGE-ME-security-owner
 /.golangci.yml                                     @CHANGE-ME-security-owner

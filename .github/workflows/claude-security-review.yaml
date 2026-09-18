@@ -49,7 +49,7 @@ jobs:
           claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           comment-pr: true
           upload-results: true
-          exclude-directories: node_modules,dist,tests/policy/rendered,infra/.state
+          exclude-directories: node_modules,dist,tests/teleport/policy/rendered,.dogfood,packages,services/agent
           custom-security-scan-instructions: .github/claude-security-focus.md
       - name: Fail on HIGH/CRITICAL findings
         env:

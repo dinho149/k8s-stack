@@ -1,14 +1,15 @@
-name: release-images
+name: teleport-release-images
 
 on:
   push:
-    tags: ["v*"]
+    # Teleport service images are released on their own tag series (Dogfood images have their own workflow).
+    tags: ["teleport-v*"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-images-${{ github.ref }}
+  group: teleport-release-images-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -26,9 +27,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: teleport-access, context: services/teleport-access }
-          - { name: access-agent, context: services/access-agent }
-          - { name: ssh-node, context: deploy/images/ssh-node }
+          # teleport-access is built from the repository root (the Go code lives in the root module).
+          - { name: teleport-access, context: ., file: deploy/teleport/images/teleport-access/Dockerfile }
+          - { name: access-agent, context: services/access-agent, file: services/access-agent/Dockerfile }
+          - { name: ssh-node, context: deploy/teleport/images/ssh-node, file: deploy/teleport/images/ssh-node/Dockerfile }
     outputs:
       digests: ${{ steps.digest.outputs.line }}
     steps:
@@ -45,6 +47,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           build-contexts: lockfile=.
           platforms: linux/amd64,linux/arm64
           push: true

@@ -63,10 +63,10 @@ jobs:
             Review specifically, in this order, for:
             1. Privilege escalation: any change that lets a request, role, bot, user or team gain `editor`, `access`,
                `system:masters`, wildcard `db_users`, root logins, or auto-approval of a non-low-risk role.
-               Focus: infra/teleport/src/policy, services/teleport-access/internal/policy, internal/broker.
+               Focus: infra/teleport/src/policy, internal/teleportaccess/policy, internal/teleportaccess/broker.
             2. Identity binding: any place identity comes from a caller-controlled header/body/chat payload instead
                of the signed X-Teleport-Assertion; approver checks not bound to Teleport user traits; self-approval.
-               Focus: services/teleport-access/internal/mcp, internal/broker, services/access-agent/src/identity,
+               Focus: internal/teleportaccess/mcp, internal/teleportaccess/broker, services/access-agent/src/identity,
                src/adapters, src/notifications.
             3. Policy bypass: mixed-tier requests, TTL caps, deny rules, unanchored patterns, resource-scoped
                requests, hidden roles, rate limits.
