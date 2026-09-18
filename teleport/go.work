@@ -1,7 +1,0 @@
-go 1.26.6
-
-use (
-	./services/teleport-access
-	./tests/integration
-	./tests/tools
-)
