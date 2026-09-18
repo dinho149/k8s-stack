@@ -24,7 +24,7 @@
     "fastify": "^5.6.0",
     "google-auth-library": "^11.0.2",
     "googleapis": "^181.0.0",
-    "pino": "^9.9.0",
+    "pino": "^10.3.1",
     "pino-pretty": "^13.0.0",
     "zod": "^4.6.5"
   },
