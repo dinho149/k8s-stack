@@ -89,7 +89,9 @@ export function Approvals() {
                           onDone={(message) => {
                             setNotice(message);
                             setOpen(undefined);
+                            // Teleport's read cache can lag the write by a moment: reload now and once more shortly after.
                             void queue.reload();
+                            setTimeout(() => void queue.reload(), 2000);
                           }}
                         />
                       </td>

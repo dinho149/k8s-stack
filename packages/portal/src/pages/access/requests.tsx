@@ -207,7 +207,13 @@ export function RequestDetail() {
             <p className="muted">
               The access broker verifies your approver role and records the decision in Teleport.
             </p>
-            <DecisionControls request={r} onDone={() => void req.reload()} />
+            <DecisionControls
+              request={r}
+              onDone={() => {
+                void req.reload();
+                setTimeout(() => void req.reload(), 2000);
+              }}
+            />
           </section>
         )}
       </div>
