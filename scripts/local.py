@@ -34,6 +34,14 @@ SERVICES = {
 }
 CHILDREN = {}
 GROUPS = {
+    'Desktop workspace': {
+        'desktop': 'Build and open the local desktop app',
+        'desktop-open': 'Open the built or installed desktop app',
+        'desktop-build': 'Build the desktop app',
+        'desktop-package': 'Package macOS desktop installers',
+        'test-desktop': 'Test the desktop workflow engine',
+        'test-desktop-ui': 'Test the desktop user journey',
+    },
     'Start here': {'help': 'Show commands and examples', 'setup': 'Install project dependencies and Chromium', 'doctor': 'Check local prerequisites', 'up': 'Start the complete local stack in the background', 'open': 'Open the portal'},
     'Manage services': {'status': 'Show health and URLs', 'logs': 'Follow logs [SERVICE=all|api|backend|portal|agent|database|registry]', 'stop': 'Stop app services, preserving the cluster', 'restart': 'Restart app services', 'down': 'Delete previews and local cluster; retain database/registry data', 'reset': 'Delete all local data CONFIRM=dogfood-local', 'clean': 'Remove build and test artifacts', 'local': 'Bootstrap only the local cluster', 'portal': 'Run the frontend in the foreground', 'agent': 'Start the optional agent', 'agent-stop': 'Stop the agent'},
     'Previews': {'sample-build': 'Build and record the sample image digest', 'preview-up': 'Create preview NAME=demo [IMAGE=… REVISION=…]', 'preview-status': 'List previews or inspect NAME=demo', 'preview-down': 'Request deletion NAME=demo [CONFIRMATION=…]', 'preview-retry': 'Redeploy NAME=demo [IMAGE=… REVISION=…]', 'preview-extend': 'Extend NAME=demo MINUTES=30', 'preview-diagnostics': 'Inspect Kubernetes diagnostics NAME=demo'},
@@ -179,7 +187,7 @@ def help_text(all_commands=False):
             print()
     else:
         section('Get started')
-        for name, description in [('setup', 'Install dependencies'), ('up', 'Launch your local stack'), ('open', 'Open the portal')]:
+        for name, description in [('setup', 'Install dependencies'), ('desktop', 'Open the desktop workspace'), ('up', 'Launch your local stack'), ('open', 'Open the portal')]:
             command_row(name, description)
         print()
         section('Everyday workflow')
@@ -690,6 +698,11 @@ def logs():
 
 def checks(command):
     direct = {
+        'desktop': ['npm', 'run', 'dev', '--workspace', '@dogfood/desktop'],
+        'desktop-build': ['npm', 'run', 'build', '--workspace', '@dogfood/desktop'],
+        'desktop-package': ['npm', 'run', 'package', '--workspace', '@dogfood/desktop'],
+        'test-desktop': ['npm', 'run', 'test', '--workspace', '@dogfood/desktop'],
+        'test-desktop-ui': ['npm', 'run', 'test:ui', '--workspace', '@dogfood/desktop'],
         'typecheck': ['npm', 'run', 'typecheck'],
         'test-agent': ['npm', 'run', 'test', '--workspace', '@dogfood/agent'],
         'test-portal': ['npm', 'run', 'test', '--workspace', '@dogfood/portal'],
@@ -718,6 +731,7 @@ def checks(command):
         run('Go tests', ['go', 'test', '-race', './cmd/...', './internal/...'])
         checks('test-local')
         checks('test-agent')
+        checks('test-desktop')
         checks('test-portal')
     elif command == 'test':
         checks('lint')
@@ -735,7 +749,20 @@ def checks(command):
 
 
 def dispatch(command):
-    if command == 'setup':
+    if command == 'desktop-open':
+        if sys.platform != 'darwin':
+            raise RuntimeError('desktop-open currently supports macOS only.')
+        release = ROOT / 'packages' / 'desktop' / 'release'
+        native = 'mac-arm64' if os.uname().machine == 'arm64' else 'mac'
+        candidates = [release / native / 'Dogfood.app',
+                      release / 'mac-universal' / 'Dogfood.app',
+                      Path('/Applications/Dogfood.app'),
+                      Path.home() / 'Applications' / 'Dogfood.app']
+        application = next((path for path in candidates if path.is_dir()), None)
+        if application is None:
+            raise RuntimeError('No packaged Dogfood app found. Run make desktop-package first, or use make desktop to build and launch from source.')
+        run('Open Dogfood', ['open', str(application)])
+    elif command == 'setup':
         setup()
     elif command == 'doctor':
         doctor()
@@ -843,12 +870,14 @@ def main():
             os.killpg(os.getpgrp(), signal.SIGTERM)
         sys.exit(code)
     os.umask(0o077)
-    credentials()
+    if command not in ('desktop', 'desktop-open', 'desktop-build', 'desktop-package', 'test-desktop', 'test-desktop-ui'):
+        credentials()
     heading(command)
     # Checks do not mutate cluster/process state and must not block behind
     # long bootstrap operations (including editor and stop-hook lint runs).
     read_only = ('status', 'logs', 'open', 'lint', 'format-check', 'typecheck',
-                 'audit', 'catalog-check', 'test-local')
+                 'audit', 'catalog-check', 'test-local', 'desktop', 'desktop-open', 'desktop-build',
+                 'desktop-package', 'test-desktop', 'test-desktop-ui')
     with contextlib.nullcontext() if command in read_only else locked():
         dispatch(command)
     if command not in ('status', 'logs', 'open'):

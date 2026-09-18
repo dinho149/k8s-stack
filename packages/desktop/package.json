@@ -1,0 +1,68 @@
+{
+  "name": "@dogfood/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dogfood local development workspace",
+  "author": "Dogfood",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "npm run build && npm run rebuild && electron .",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/core/*.test.ts",
+    "test:ui": "npm run build && npm run rebuild && playwright test",
+    "rebuild": "electron-builder install-app-deps",
+    "package": "npm run build && electron-builder --mac --arm64 --x64"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.274",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "monaco-editor": "0.56.0",
+    "node-pty": "1.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "yaml": "2.8.2",
+    "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/react": "18.3.25",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.25.0",
+    "vite": "6.4.3"
+  },
+  "build": {
+    "appId": "dev.dogfood.desktop",
+    "productName": "Dogfood",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node-pty/**",
+      "**/@anthropic-ai/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "icon": "build/icon.png"
+    },
+    "publish": null
+  },
+  "engines": {
+    "node": ">=22.13 <26"
+  }
+}

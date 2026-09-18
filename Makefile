@@ -11,7 +11,7 @@ TARGETS := help help-all setup doctor up open status logs stop restart down rese
  preview-retry preview-extend preview-diagnostics build typecheck format format-check \
  lint test-fast test-scoped test ship-gate test-portal test-agent test-local \
  browser-install audit infra-validate catalog-check catalog-sync tool-routes \
- benchmark benchmark-report test-isolation
+ benchmark benchmark-report test-isolation desktop desktop-open desktop-build desktop-package test-desktop test-desktop-ui
 
 .PHONY: $(TARGETS)
 $(TARGETS):

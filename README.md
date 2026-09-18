@@ -1,6 +1,16 @@
 # Dogfood
 
-A Kubernetes developer platform for kind, EKS, and GKE, with disposable PR previews, Backstage, and a Claude Agent SDK assistant for Slack, Teams, Google Chat, and the portal.
+A local desktop workspace for AI-assisted software delivery, with an optional Kubernetes platform for kind, EKS, and GKE, disposable PR previews, Backstage, and assistants for Slack, Teams, Google Chat, and the portal.
+
+## Desktop workspace
+
+Run `npm ci`, then `make desktop` on macOS to open the local workspace. Create an idea or task, approve its plan, build in an isolated Git worktree, run tests and a local preview, review the changes, and merge or publish a PR. Choose Codex or Claude Code in Connections. Docker and a prebuilt image are not required.
+
+Use `make desktop-open` to open an already built or installed macOS app without rebuilding.
+
+Task history, artifacts, source worktrees, and usage records are stored locally. Token controls include targeted retrieval, optional cheaper workers, summary caching, and task/project budgets. See the [desktop guide](packages/desktop/README.md) for setup, privacy boundaries, cost qualification, and packaging.
+
+## Optional Kubernetes platform
 
 **Historical Stack measurement (before the Dogfood rebrand), local warm application startup: p95 43.59 seconds; 30/30 launches passed at concurrency 5.** Including queue time, p95 was 44.05 seconds against the 180-second target. Cloud and cold-host results remain unmeasured; see the [verification record](docs/verification.md). Every deployment records queue, cluster, platform, and application milestones. Cold starts, failed runs, and retries remain visible.
 
@@ -15,7 +25,7 @@ Install these system prerequisites first. Make installs project dependencies; it
 | GNU Make and Git | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: distribution packages                                               |
 | Python           | 3.9+; [python.org](https://www.python.org/downloads/)                                                                                  |
 | Go               | 1.25+; [go.dev](https://go.dev/dl/)                                                                                                    |
-| Node.js and npm  | Node >=22 and <26 (22/24 LTS recommended); [nodejs.org](https://nodejs.org/en/download)                                                |
+| Node.js and npm  | Node >=22.13 and <26 (22/24 LTS recommended); [nodejs.org](https://nodejs.org/en/download)                                             |
 | Docker           | Running Docker Desktop or Docker Engine; [Docker installation](https://docs.docker.com/get-started/get-docker/)                        |
 | kind             | [kind installation](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)                                                      |
 | kubectl          | Compatible with Kubernetes 1.34; [kubectl installation](https://kubernetes.io/docs/tasks/tools/)                                       |

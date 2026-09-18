@@ -17,6 +17,7 @@ __pycache__/
 
 playwright-report/
 test-results/
+release/
 
 # Retained legacy state may contain credentials.
 .stack/

@@ -19,12 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version-file: go.mod, cache: true}
+        with: { go-version-file: go.mod, cache: true }
       - uses: actions/setup-node@v4
-        with: {node-version: '${{ matrix.node }}', cache: npm}
+        with: { node-version: '${{ matrix.node }}', cache: npm }
       - uses: azure/setup-helm@v4.3.0
-        with: {version: '${{ matrix.helm }}'}
+        with: { version: '${{ matrix.helm }}' }
       - uses: opentofu/setup-opentofu@v1
-        with: {tofu_version: 1.10.6}
+        with: { tofu_version: 1.10.6 }
       - run: make setup WITH_DEPS=1
       - run: make ship-gate
+  desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run typecheck --workspace @dogfood/desktop
+      - run: make test-desktop
+      - run: make test-desktop-ui
+      - run: node --import tsx packages/desktop/scripts/smoke-starter.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: desktop-test-evidence
+          path: packages/desktop/test-results
