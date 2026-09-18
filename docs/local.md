@@ -92,6 +92,15 @@ tsh request create --roles prod-ssh --reason "incident 123" --nowait   # needs a
 make requests && make approve ID=<id>
 ```
 
+The web UI cannot raise or review requests on Community Edition: `Identity Governance → Access Requests` only shows
+the "Unlock Access Requests With Teleport Enterprise" page. Requests are created with `tsh request create`, the
+access agent (`make agent-cli AS=alice`, or the Slack / Teams / Google Chat adapters) or the MCP server, and approved
+with `tsh request review --approve <id>` (as `bob`), `make approve`, or the agent's approver card. A grant lives
+in the `tsh` session that assumed it (`tsh login --request-id=<id>`), so the elevated resources appear in `tsh ls`,
+`tsh db ls`, `tsh kube ls` and `tsh apps ls` rather than in the browser; the web UI is still the place for Audit
+(events, session recordings) and, as `admin`, for Zero Trust Access → Roles / Users. Holding a catalog role also
+denies creating another request (every catalog role denies `create` on all resources): `tsh request drop` first.
+
 ## Troubleshooting
 
 - `make doctor` first. Then `make events` and `make logs SVC=operator`.

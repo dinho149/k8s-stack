@@ -11,5 +11,5 @@ for r in sorted(d,key=lambda r:r["metadata"].get("expires","")):
     s=r["spec"]; m=r["metadata"]
     rows.append("|".join([m["name"][:8],s.get("user",""),",".join(s.get("roles",[])),states.get(s.get("state",1),str(s.get("state"))),(s.get("request_reason") or "")[:40],(m.get("expires") or "")[:16]]))
 print("\n".join(rows))
-' | { mapfile -t rows; (( ${#rows[@]} > 1 )) && ui::table "${rows[@]}" || ui::info "no access requests"; }
+' | { rows=(); while IFS= read -r line; do rows+=("$line"); done; if (( ${#rows[@]} > 1 )); then ui::table "${rows[@]}"; else ui::info "no access requests"; fi; }  # no mapfile: macOS ships bash 3.2
 echo; ui::info "approve: make approve ID=<id> [REASON=...]    deny: make deny ID=<id> REASON=..."
