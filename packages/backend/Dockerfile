@@ -1,11 +1,11 @@
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /workspace
 COPY package.json package-lock.json .npmrc ./
 COPY packages/backend/package.json packages/backend/package.json
 RUN npm ci --ignore-scripts --workspace @dogfood/backend --include-workspace-root
 COPY packages/backend packages/backend
 RUN npm run build --workspace @dogfood/backend
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 WORKDIR /workspace
 COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/packages/backend ./packages/backend
