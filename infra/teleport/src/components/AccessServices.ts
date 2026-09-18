@@ -27,7 +27,7 @@ import { ACCESS_NAMESPACE, BOTS, type BotKey } from "../policy/catalog";
 import type { AccessPolicy } from "./AccessPolicy";
 import type { TeleportCluster } from "./TeleportCluster";
 import { imageRef } from "./DummyResources";
-import { AGENT_PORT, AGENT_PUBLIC_PORT, BROKER_PORT, MCP_PORT } from "./NetworkPolicies";
+import { AGENT_PORT, AGENT_PUBLIC_PORT, BROKER_PORT, MCP_PORT, PORTAL_PORT } from "./NetworkPolicies";
 
 export interface AccessServicesArgs {
   profile: EnvProfile;
@@ -145,6 +145,8 @@ export class AccessServices extends pulumi.ComponentResource {
   public readonly webhookSecret: pulumi.Output<string>;
   /** HMAC key for the per-turn identity assertions between agent, MCP server and broker. */
   public readonly identitySigningKey: pulumi.Output<string>;
+  /** bearer the Backstage backend presents to the access portal API (with it, X-Dogfood-Subject is trusted) */
+  public readonly portalServiceToken: pulumi.Output<string>;
   public readonly harnessIdentitySecret = "ci-harness-identity";
 
   constructor(name: string, args: AccessServicesArgs, opts?: pulumi.ComponentResourceOptions) {
@@ -155,7 +157,7 @@ export class AccessServices extends pulumi.ComponentResource {
 
     this.namespace = new k8s.core.v1.Namespace(`${name}-ns`, { metadata: { name: ACCESS_NAMESPACE, labels: namespaceLabels(p, "teleport-access", "restricted") } }, { parent: this });
     const ns = this.namespace.metadata.name;
-    namespaceGuardrails(name, { namespace: ns, quota: { pods: 12, cpu: "2", memory: "4Gi", cpuLimit: "8", memoryLimit: "8Gi" } }, child([this.namespace]));
+    namespaceGuardrails(name, { namespace: ns, quota: { pods: 14, cpu: "2", memory: "4Gi", cpuLimit: "8", memoryLimit: "8Gi" } }, child([this.namespace]));
 
     // shared secrets between the services (generated once, stored in state)
     const gen = (n: string, length = 40) => new random.RandomPassword(`${name}-${n}`, { length, special: false }, { parent: this }).result;
@@ -163,12 +165,13 @@ export class AccessServices extends pulumi.ComponentResource {
     this.brokerApiToken = gen("broker-token");
     this.webhookSecret = gen("webhook-secret");
     this.identitySigningKey = gen("identity-signing-key", 48);
+    this.portalServiceToken = gen("portal-token");
     const secrets = new k8s.core.v1.Secret(
       `${name}-secrets`,
       {
         metadata: { name: SERVICES_SECRET_NAME, namespace: ns },
         immutable: true,
-        stringData: { TA_MCP_SHARED_TOKEN: this.mcpSharedToken, TA_BROKER_API_TOKEN: this.brokerApiToken, TA_BROKER_WEBHOOK_SECRET: this.webhookSecret, TA_IDENTITY_SIGNING_KEY: this.identitySigningKey },
+        stringData: { TA_MCP_SHARED_TOKEN: this.mcpSharedToken, TA_BROKER_API_TOKEN: this.brokerApiToken, TA_BROKER_WEBHOOK_SECRET: this.webhookSecret, TA_IDENTITY_SIGNING_KEY: this.identitySigningKey, TA_PORTAL_SERVICE_TOKEN: this.portalServiceToken },
       },
       { ...child([this.namespace]), replaceOnChanges: ["stringData"], deleteBeforeReplace: true },
     );
@@ -275,6 +278,40 @@ export class AccessServices extends pulumi.ComponentResource {
         ],
         extraVolumes: [{ name: "policy", configMap: { name: policyCm.metadata.name } }],
         extraMounts: [{ name: "policy", mountPath: "/etc/teleport-access", readOnly: true }],
+      });
+    }
+
+    // Access portal API (the backend of the Dogfood portal's Access pages). Reads + request creation with its own
+    // bot; approve/deny are forwarded to the broker (which verifies the approver), so the bot never holds
+    // access_request:update. The subject -> Teleport user map is a ConfigMap; the service token a Secret key.
+    if (p.services.portal.enabled) {
+      const identitiesCm = new k8s.core.v1.ConfigMap(
+        `${name}-portal-identities`,
+        { metadata: { name: "portal-identities", namespace: ns }, data: { "identities.json": JSON.stringify(p.services.portal.identities) } },
+        child([this.namespace]),
+      );
+      deployBot("portal", {
+        image: goImage,
+        args: ["portal"],
+        port: PORTAL_PORT,
+        env: [
+          secretEnv("TA_PORTAL_SERVICE_TOKEN"),
+          secretEnv("TA_IDENTITY_SIGNING_KEY"),
+          { name: "TA_PORTAL_BROKER_TOKEN", valueFrom: { secretKeyRef: { name: secrets.metadata.name, key: "TA_BROKER_API_TOKEN" } } },
+          { name: "TA_PORTAL_BROKER_URL", value: `http://${BOTS.broker.name}.${ACCESS_NAMESPACE}.svc.cluster.local:${BROKER_PORT}` },
+          { name: "TA_PORTAL_HTTP_ADDR", value: `:${PORTAL_PORT}` },
+          { name: "TA_PORTAL_POLICY_FILE", value: "/etc/teleport-access/policy.yaml" },
+          { name: "TA_PORTAL_IDENTITY_MAP_FILE", value: "/etc/teleport-access/identities/identities.json" },
+          { name: "TA_PORTAL_IDENTITY_FALLBACK", value: p.services.portal.identityFallback },
+        ],
+        extraVolumes: [
+          { name: "policy", configMap: { name: policyCm.metadata.name } },
+          { name: "identities", configMap: { name: identitiesCm.metadata.name } },
+        ],
+        extraMounts: [
+          { name: "policy", mountPath: "/etc/teleport-access", readOnly: true },
+          { name: "identities", mountPath: "/etc/teleport-access/identities", readOnly: true },
+        ],
       });
     }
 

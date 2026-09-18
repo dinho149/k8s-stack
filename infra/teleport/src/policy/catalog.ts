@@ -79,6 +79,7 @@ export const FIXED_ROLES = {
   botMcp: "svc-teleport-mcp",
   botBroker: "svc-access-broker",
   botAgent: "svc-access-agent",
+  botPortal: "svc-access-portal",
   botHarness: "svc-ci-harness",
 } as const;
 
@@ -86,6 +87,8 @@ export const BOTS = {
   mcp: { name: "teleport-mcp", role: FIXED_ROLES.botMcp, serviceAccount: "teleport-mcp" },
   broker: { name: "access-broker", role: FIXED_ROLES.botBroker, serviceAccount: "access-broker" },
   agent: { name: "access-agent", role: FIXED_ROLES.botAgent, serviceAccount: "access-agent" },
+  /** access portal API: the backend of the Dogfood portal's Access pages (reads + request creation; approvals go via the broker) */
+  portal: { name: "access-portal", role: FIXED_ROLES.botPortal, serviceAccount: "access-portal" },
   harness: { name: "ci-harness", role: FIXED_ROLES.botHarness, serviceAccount: "ci-harness" },
 } as const;
 export type BotKey = keyof typeof BOTS;

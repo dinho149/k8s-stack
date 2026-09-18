@@ -82,7 +82,7 @@ describe("renderNetworkPolicies", () => {
     const mcp = find(kind, "teleport-access", "mcp");
     expect(mcp.ingress).toEqual([{ from: [{ podSelector: { matchLabels: { app: "access-agent" } } }], ports: [{ protocol: "TCP", port: 8080 }] }]);
     const broker = find(kind, "teleport-access", "broker");
-    expect(broker.ingress[0].from).toEqual([{ podSelector: { matchLabels: { app: "access-agent" } } }]);
+    expect(broker.ingress[0].from).toEqual([{ podSelector: { matchLabels: { app: "access-agent" } } }, { podSelector: { matchLabels: { app: "access-portal" } } }]);
     expect(broker.egress.at(-1)).toEqual({ to: [{ podSelector: { matchLabels: { app: "access-agent" } } }], ports: [{ protocol: "TCP", port: AGENT_PORT }] });
     const agent = find(kind, "teleport-access", "agent");
     expect(agent.ingress).toEqual([{ from: [{ podSelector: { matchLabels: { app: "access-broker" } } }], ports: [{ protocol: "TCP", port: AGENT_PORT }] }]);
@@ -97,6 +97,23 @@ describe("renderNetworkPolicies", () => {
     expect(slack.ingress.some((r: any) => r.ports?.[0]?.port === AGENT_PUBLIC_PORT)).toBe(false);
     const teams = find(cloud({ platform: "aks", kubeContext: "aks-dev" }), "teleport-access", "agent");
     expect(teams.ingress.some((r: any) => !r.from && r.ports?.[0]?.port === AGENT_PUBLIC_PORT)).toBe(true);
+  });
+
+  it("portal API: ingress only from the configured Backstage backend (none on kind), egress to auth/proxy/broker; broker admits it", () => {
+    const pol = renderNetworkPolicies(kind);
+    const portal = pol.find((x) => x.namespace === "teleport-access" && x.name === "portal")!;
+    expect(portal.spec.ingress).toEqual([]);
+    expect(JSON.stringify(portal.spec.egress)).toContain('"app":"access-broker"');
+    expect(JSON.stringify(portal.spec.egress)).not.toContain('"app":"teleport-mcp"');
+    const broker = pol.find((x) => x.namespace === "teleport-access" && x.name === "broker")!;
+    expect(JSON.stringify(broker.spec.ingress)).toContain('"app":"access-portal"');
+    const withBackstage = renderNetworkPolicies({ ...kind, services: { ...kind.services, portal: { ...kind.services.portal, backstage: { namespace: "dogfood", podLabels: { app: "dogfood-backstage" } } } } });
+    const ingress = JSON.stringify(withBackstage.find((x) => x.name === "portal")!.spec.ingress);
+    expect(ingress).toContain('"kubernetes.io/metadata.name":"dogfood"');
+    expect(ingress).toContain('"app":"dogfood-backstage"');
+    const off = renderNetworkPolicies({ ...kind, services: { ...kind.services, portal: { ...kind.services.portal, enabled: false } } });
+    expect(off.find((x) => x.name === "portal")).toBeUndefined();
+    expect(JSON.stringify(off.find((x) => x.name === "broker")!.spec.ingress)).not.toContain("access-portal");
   });
 
   it("harness policy exists only when the harness is enabled", () => {

@@ -111,6 +111,9 @@ describe("role catalog rendering", () => {
     expect(rule(FIXED_ROLES.botMcp, "access_request")).not.toContain("update");
     expect(rule(FIXED_ROLES.botBroker, "access_request")).toEqual(["list", "read", "update"]);
     expect(rule(FIXED_ROLES.botBroker, "access_request")).not.toContain("create");
+    // the portal API creates requests but never decides them: approvals go through the broker
+    expect(rule(FIXED_ROLES.botPortal, "access_request")).toEqual(["list", "read", "create"]);
+    expect(rule(FIXED_ROLES.botPortal, "access_request")).not.toContain("update");
     expect(roles[FIXED_ROLES.botMcp].spec.allow!.impersonate).toBeUndefined();
     expect(roles[FIXED_ROLES.botAgent].spec.allow!.rules).toHaveLength(1);
   });
@@ -245,9 +248,11 @@ const kindOf = (c: Created) => c.inputs.kind as string | undefined;
 describe("AccessPolicy resources", () => {
   const kindBase = { platform: "kind" as const, kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" as const } };
 
-  it("enabledBots follows services.harness.enabled", () => {
-    expect(enabledBots({ services: { harness: { enabled: true } } } as any)).toContain("harness");
-    expect(enabledBots({ services: { harness: { enabled: false } } } as any)).not.toContain("harness");
+  it("enabledBots follows services.harness.enabled and services.portal.enabled", () => {
+    expect(enabledBots({ services: { harness: { enabled: true }, portal: { enabled: true } } } as any)).toContain("harness");
+    expect(enabledBots({ services: { harness: { enabled: false }, portal: { enabled: true } } } as any)).not.toContain("harness");
+    expect(enabledBots({ services: { harness: { enabled: false }, portal: { enabled: true } } } as any)).toContain("portal");
+    expect(enabledBots({ services: { harness: { enabled: false }, portal: { enabled: false } } } as any)).not.toContain("portal");
   });
 
   it("kind: harness bot/token/role present, ssh-node token per env, kube RBAC bindings without system:masters", async () => {

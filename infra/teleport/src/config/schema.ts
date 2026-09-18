@@ -146,6 +146,18 @@ export const ServicesSchema = z.object({
       slackAllowedTeamIds: z.array(z.string().min(1)).default([]),
     })
     .default({ enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false, allowedEmailDomains: [], slackAllowedTeamIds: [] }),
+  /** Access portal API (teleport-access portal): the backend of the Dogfood portal's Access pages. */
+  portal: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** portal subject -> Teleport user (TA_PORTAL_IDENTITY_MAP_FILE); e.g. the local guest subject -> alice */
+      identities: z.record(z.string().min(1), z.string().min(1)).default({}),
+      /** none: only mapped subjects; username: an unmapped subject shaped like a username IS the Teleport user (GitHub logins) */
+      identityFallback: z.enum(["none", "username"]).default("none"),
+      /** Where the Backstage backend runs; opens the portal API's ingress to it. Unset (kind): no ingress, use port-forward. */
+      backstage: z.object({ namespace: z.string().min(1), podLabels: z.record(z.string(), z.string()) }).optional(),
+    })
+    .default({ enabled: true, identities: {}, identityFallback: "none" }),
   /** CI/test harness bot (impersonates alice/bob). Only ever enabled on kind. */
   harness: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
 });

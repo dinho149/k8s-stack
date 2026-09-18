@@ -15,5 +15,7 @@ export const kindDefaults: DeepPartial<StackConfigInput> = {
   images: { registry: "", tag: "dev", pullPolicy: "IfNotPresent" },
   insecureLocal: true,
   dummies: { enabled: true, sshNodes: { dev: 2, prod: 1 }, postgres: true, mysql: false, httpbin: true, cloudStandin: "static" },
-  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false }, harness: { enabled: true } },
+  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false }, harness: { enabled: true },
+    // Dogfood's local guest sign-in is subject `local-developer` (-> alice); `username` lets TELEPORT_LOCAL_SUBJECT=bob switch the demo identity.
+    portal: { enabled: true, identities: { "local-developer": "alice" }, identityFallback: "username" } },
 };
