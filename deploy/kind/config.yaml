@@ -15,3 +15,8 @@ nodes:
       - containerPort: 30443
         hostPort: 18443
         listenAddress: 127.0.0.1
+      # Teleport proxy (multiplexed web UI, SSH, Kubernetes, database and app traffic on one port).
+      # NodePort of the teleport-proxy-nodeport Service (infra/teleport); 30080 belongs to the gateway above.
+      - containerPort: 30380
+        hostPort: 3080
+        listenAddress: 127.0.0.1

@@ -1,0 +1,122 @@
+# Local guardrails, mirrored in CI (.github/workflows/teleport.yaml job `pre-commit` runs `pre-commit run --all-files`,
+# so a `git commit --no-verify` is still caught). Install with `make teleport-hooks`.
+#
+# Imported with the Teleport access layer: the Go hooks cover the whole root module, the shell/npm/semgrep
+# hooks are scoped to the Teleport trees for now (widen them when the Dogfood trees adopt the same rules).
+#
+# pre-commit stage: fast checks (secrets, syntax, formatting, linters).
+# pre-push stage:   slower checks (semgrep with the registry packs, offline CR rendering + kubeconform).
+#
+# Revisions are pinned tags; bump them with `pre-commit autoupdate` (and keep .tool-versions in step).
+default_stages: [pre-commit]
+minimum_pre_commit_version: "4.0.0"
+exclude: ^(node_modules/|.*/node_modules/|\.dogfood/|tests/teleport/policy/(rendered|schemas)/|bin/|package-lock\.json$|packages/desktop/)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # kind config and Pulumi stack files use custom tags/anchors; Helm templates are not YAML until rendered
+        exclude: ^(deploy/kind/|infra/teleport/Pulumi\..*\.yaml$|deploy/charts/.*/templates/)
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning, -x]
+        files: ^(deploy/teleport/scripts/.*\.sh|tests/teleport/e2e/.*\.sh)$
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+        entry: ghcr.io/hadolint/hadolint:v2.15.1 hadolint   # pinned image (the upstream hook uses :latest)
+        files: ^(deploy/teleport/images/.*/Dockerfile|services/access-agent/Dockerfile)$
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.13.2
+    hooks:
+      - id: golangci-lint-config-verify
+      # One Go module (the repo root). Scoped to the Teleport packages for now: the Dogfood packages
+      # (cmd/dogfood, internal/platform) do not pass gosec/errcheck yet and are linted in a follow-up.
+      - id: golangci-lint-full
+        name: golangci-lint (teleport packages)
+        entry: golangci-lint run ./cmd/teleport-access/... ./internal/teleportaccess/... ./tests/teleport/tools/...
+        files: ^(cmd/teleport-access|internal/teleportaccess|tests/teleport/tools)/
+      - id: golangci-lint-full
+        name: golangci-lint (tests/teleport/integration)
+        entry: golangci-lint run --build-tags=integration ./tests/teleport/integration/...
+        files: ^tests/teleport/integration/
+
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.177.0
+    hooks:
+      - id: semgrep
+        name: semgrep (repo rules + registry packs)
+        stages: [pre-push]
+        args:
+          - --config=.semgrep.yml
+          - --config=p/golang
+          - --config=p/typescript
+          - --config=p/dockerfile
+          - --config=p/github-actions
+          - --config=p/kubernetes
+          - --error
+          - --quiet
+          - --metrics=off
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        language: system
+        types: [go]
+        entry: bash -c 'out="$(gofmt -l "$@")"; [ -z "$out" ] || { printf "gofmt needed:\n%s\n" "$out"; exit 1; }' --
+      - id: tsh-insecure-guard
+        name: no hard-coded tsh/tctl --insecure or curl -k outside the guarded variables
+        language: pygrep
+        entry: '(tsh|tctl)[^\n]*--insecure|curl[^\n]* -[a-zA-Z]*k[a-zA-Z]* '
+        types: [text]
+        # index.ts builds the login hint conditionally on profile.teleport.insecure (kind only).
+        exclude: ^(deploy/teleport/scripts/_common\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
+      - id: npm-typecheck
+        name: npm run typecheck (workspaces)
+        language: system
+        entry: npm run typecheck --workspace @dogfood/teleport-infra --workspace @dogfood/access-agent
+        files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
+        pass_filenames: false
+      - id: npm-lint
+        name: npm run lint (workspaces)
+        language: system
+        entry: npm run lint --workspace @dogfood/access-agent
+        files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
+        pass_filenames: false
+      - id: make-render
+        name: make teleport-render (offline CRs + kubeconform)
+        language: system
+        entry: make --no-print-directory teleport-render
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

@@ -49,3 +49,14 @@ Both Bedrock and Vertex are supported by the Claude Agent SDK. Set model IDs exp
 ## Delivery semantics
 
 Lifecycle actions are durable. Chat messages are deduplicated on disk; a process crash after receipt does not automatically re-execute an uncertain action. Users must check the operation record before retrying. Notification outbox delivery is at least once; a provider accepting a message before an acknowledgement is recorded can produce a duplicate. Expired or superseded pending notifications are cancelled. No production messaging or inference is performed by unit tests.
+
+## Teleport access layer
+
+Just-in-time access to servers, databases, Kubernetes and apps is delegated to Teleport, deployed into the same
+cluster by Pulumi (`infra/teleport`). Nobody holds standing privileges: users request catalog roles, an access broker
+(`cmd/teleport-access broker`) auto-approves low-risk requests and routes production ones to approvers, and an MCP
+server (`cmd/teleport-access mcp`) gives the chat agent read-only answers plus request creation. Service-to-service
+identity uses signed assertions on top of bearer tokens and default-deny NetworkPolicies. The design, the role
+catalog and the decision flow are documented in [docs/teleport/architecture.md](teleport/architecture.md) and
+[docs/teleport/access-model.md](teleport/access-model.md); ADR 0007 records how the standalone repository joined
+Dogfood.

@@ -1,0 +1,13 @@
+.git
+node_modules
+dist
+test
+coverage
+*.log
+*.pem
+*.key
+identity*
+.env*
+.logs
+.dogfood
+*.tsbuildinfo

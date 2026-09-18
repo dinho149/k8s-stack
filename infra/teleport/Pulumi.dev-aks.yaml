@@ -1,0 +1,49 @@
+# dev-aks: Teleport on an EXISTING aks cluster reached through kubeContext.
+#
+# Scaffold: passes `make preview STACK=dev-aks` (optionally against the kind context with
+#   make preview STACK=dev-aks PULUMI_ARGS="--config teleport:kubeContext=kind-dogfood-local")
+# Before a real deploy: set kubeContext, clusterName/publicAddr (a DNS name you control), a cert-manager
+# ClusterIssuer or ACME email, GitHub SSO secrets (make github-sso STACK=dev-aks), images.registry,
+# and chartMode (aws/gcp/azure) once the managed backends exist.
+config:
+  teleport:env: dev
+  teleport:platform: aks
+  # CI previews render against the kind context with TELEPORT_ALLOW_KIND_CONTEXT=1; a real deploy must set a cloud context.
+  teleport:kubeContext: kind-dogfood-local
+  teleport:clusterName: teleport.dev.example.com
+  teleport:publicAddr: teleport.dev.example.com:443
+  teleport:version: "18.11.1"
+  teleport:edition: community
+  # No local logins off kind: SSO only, WebAuthn only. `make github-sso STACK=dev-aks` fills in the
+  # real organization / client id and stores the client secret (teleport:githubClientSecret).
+  teleport:auth:
+    type: github
+    secondFactors: [webauthn]
+    localAuth: false
+  teleport:github:
+    organization: CHANGE-ME
+    clientId: CHANGE-ME
+    teamsToRoles:
+      - team: teleport-users
+        roles: [requester]
+      - team: teleport-approvers
+        roles: [requester, approver]
+      # No standing editor/access anywhere: admins request `break-glass-editor` like everyone else.
+      - team: teleport-admins
+        roles: [requester, approver, auditor]
+  teleport:tls:
+    mode: cert-manager
+    issuerName: letsencrypt
+    issuerKind: ClusterIssuer
+  teleport:images:
+    registry: ghcr.io/CHANGE-ME/k8s-teleport
+    tag: latest
+    pullPolicy: Always
+  teleport:services:
+    agent:
+      # the chat agent fails closed: only these email domains / Slack workspaces may talk to it
+      allowedEmailDomains: [CHANGE-ME.example.com]
+      slackAllowedTeamIds: [TCHANGEME]
+  # No local users on cloud stacks: the profile invariants refuse standing editor/access off local,
+  # and localAuth is off anyway. Administration happens through an approved break-glass-editor request.
+encryptionsalt: v1:qZb8cA+rha0=:v1:fb555+RY31ITeN/V:2lRnmhicNTrfVLczZu9vwXmWJQ23LA==

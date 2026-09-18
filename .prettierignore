@@ -1,0 +1,6 @@
+# Imported from k8s-teleport with its own formatting; reformat in a follow-up.
+services/access-agent/
+infra/teleport/
+docs/teleport/
+deploy/teleport/
+tests/teleport/

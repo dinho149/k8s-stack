@@ -1,0 +1,73 @@
+# Weekly dependency refresh across every ecosystem in the repo. Minor/patch updates are grouped into one PR
+# per ecosystem; majors (and anything security-related) arrive individually. Docker updates also refresh
+# the @sha256 digests that pin every base image.
+#
+# npm is one entry at the repo root: every workspace (packages/*, services/*, infra/teleport) shares the root
+# package-lock.json, and per-workspace entries only edit the workspace package.json without the lockfile, so
+# every PR they open fails `npm ci` (lock file out of sync).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, github-actions]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, npm]
+    ignore:
+      # TypeScript 7 (the native compiler) ships no JS API: Pulumi's ts-node runtime cannot load it and
+      # typescript-eslint peers on typescript <6.1. Lift this once both support it.
+      - dependency-name: typescript
+        versions: [">=7"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      gomod-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, go]
+
+  - package-ecosystem: docker
+    directory: /deploy/teleport/images/teleport-access
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+    ignore:
+      # The builder image must match the go.mod toolchain (see the Dockerfile header: Go 1.27's unicode tables
+      # no longer match the pinned golang.org/x/text and the binary panics at start-up). Patch and digest
+      # refreshes still arrive; bump go.mod first, then the image by hand.
+      - dependency-name: library/golang
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /services/access-agent
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /deploy/teleport/images/ssh-node
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  # Dogfood images
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /packages/portal
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /packages/backend
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /services/agent
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
