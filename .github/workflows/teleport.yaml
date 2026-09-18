@@ -144,11 +144,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - name: osv-scanner (lockfiles)
+      # go.mod only: the npm lockfile is shared with the Dogfood workspaces (Backstage, portal, agent) and is
+      # audited by their gate (`make audit`, npm audit --audit-level=high in make ship-gate).
+      - name: osv-scanner (Go module)
         uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
-            --lockfile=package-lock.json
             --lockfile=go.mod
             --format=sarif
             --output=osv.sarif
@@ -157,7 +158,6 @@ jobs:
         uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
-            --lockfile=package-lock.json
             --lockfile=go.mod
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && hashFiles('osv.sarif') != ''
