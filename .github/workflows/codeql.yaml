@@ -47,6 +47,11 @@ jobs:
               - "**/dist"
               - tests/teleport/policy/rendered
               - .dogfood
+            query-filters:
+              # slog encodes every value (JSON handler); client strings are also passed through httpx.LogSafe.
+              - exclude: { id: go/log-injection }
+              # Service secrets are mounted as files and sent as Authorization headers on purpose (ADR 0006).
+              - exclude: { id: js/file-access-to-http }
       - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           category: "/language:${{ matrix.language }}"

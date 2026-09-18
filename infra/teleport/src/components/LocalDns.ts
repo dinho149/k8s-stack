@@ -19,7 +19,8 @@ export interface LocalDnsArgs {
 
 /** kind's default Corefile with our rewrite inserted. Exported for tests. */
 export function renderCorefile(publicHost: string, targetService: string): string {
-  const escaped = publicHost.replace(/\./g, "\\.");
+  // Regex-escape every metacharacter (not only dots) so a host name can never widen the rewrite.
+  const escaped = publicHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return `.:53 {
     errors
     health {

@@ -114,7 +114,8 @@ func Logging(log *slog.Logger, next http.Handler) http.Handler {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			return
 		}
-		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", sw.status, "dur_ms", time.Since(start).Milliseconds())
+		// Path and method are client-controlled: neutralise control characters before they reach the log.
+		log.Info("http", "method", LogSafe(r.Method), "path", LogSafe(r.URL.Path), "status", sw.status, "dur_ms", time.Since(start).Milliseconds())
 	})
 }
 
