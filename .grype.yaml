@@ -1,0 +1,18 @@
+# Grype configuration (second-opinion image scanner in .github/workflows/ci.yml).
+# Every ignore below must name the exact vulnerability AND package, carry a justification, and be
+# re-evaluated when the pinned Teleport version changes (TELEPORT_VERSION).
+ignore:
+  # github.com/containerd/containerd v1.7.x vendored inside the upstream Teleport binary
+  # (public.ecr.aws/gravitational/teleport-distroless-debug:18.11.1). Both advisories concern the containerd
+  # CRI checkpoint/restore daemon, which the Teleport SSH service never runs; containerd v1 has no fixed
+  # release (fixes exist only in containerd/v2), so this cannot be resolved by us short of a Teleport
+  # release that drops the dependency. Trivy does not consider the module reachable. Re-check on every
+  # Teleport bump.
+  - vulnerability: GO-2026-5064
+    package:
+      name: github.com/containerd/containerd
+      type: go-module
+  - vulnerability: GO-2026-5338
+    package:
+      name: github.com/containerd/containerd
+      type: go-module
