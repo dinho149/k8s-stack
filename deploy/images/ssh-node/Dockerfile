@@ -6,6 +6,7 @@
 #   docker buildx imagetools inspect cgr.dev/chainguard/wolfi-base:latest
 FROM public.ecr.aws/gravitational/teleport-distroless-debug:18.11.1@sha256:3d6163a194c23262201ad0ca30ea430f51e1df11a3da4580cbae04a412ccda00 AS teleport
 
+# checkov:skip=CKV_DOCKER_2: a dummy Teleport SSH node; the pod has Kubernetes probes and kubelet ignores Docker HEALTHCHECK.
 FROM cgr.dev/chainguard/wolfi-base:latest@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d
 # bash: the login shell for `dev`. shadow: useradd. Nothing else (no curl, no procps, no sudo).
 RUN apk add --no-cache bash shadow \
