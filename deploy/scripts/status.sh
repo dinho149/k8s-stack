@@ -30,4 +30,4 @@ if [[ -n "$ping" ]] && $KUBECTL -n "$TELEPORT_NAMESPACE" get pods -l app.kuberne
 fi
 
 ui::section "You"
-if [[ -x "$BIN_DIR/tsh" ]]; then $TSH status 2>/dev/null | sed 's/^/  /' | head -12 || ui::info "not logged in — make login (GitHub) or make login-local"; else ui::info "tsh not installed — make tsh"; fi
+if [[ -x "$BIN_DIR/tsh" ]]; then $TSH status 2>/dev/null | sed 's/^/  /' | head -12 || ui::info "not logged in — make login"; else ui::info "tsh not installed — make tsh"; fi

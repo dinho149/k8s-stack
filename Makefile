@@ -2,7 +2,7 @@
 #
 #   make            -> grouped help
 #   make doctor     -> check toolchain
-#   make up         -> kind + images + pulumi + wait, ends with a summary box
+#   make up         -> tsh/deps + TLS + kind + images + pulumi + wait + local users, ends with a summary box
 #   make status     -> one-screen dashboard
 #
 # Every recipe delegates to deploy/scripts/*.sh, which source deploy/scripts/lib/ui.sh
@@ -24,6 +24,10 @@ KIND_CLUSTER    ?= teleport-local
 KUBE_CONTEXT    ?= kind-$(KIND_CLUSTER)
 TELEPORT_VERSION ?= 18.11.1
 PROXY_ADDR      ?= teleport.127.0.0.1.nip.io:3080
+# Browser-trusted mkcert certificate for the local proxy: ask (once, remembered) | 1 (always) | 0 (never)
+LOCAL_TLS       ?= ask
+# End `make up` by opening the web UI with the admin credentials (local stack, terminal only): 1 | 0
+WEB_LOGIN       ?= 1
 IMAGE_TAG       ?= dev
 PULUMI_BACKEND_URL      ?= file://$(REPO_ROOT)/infra/.state
 # The well-known passphrase exists ONLY for the throwaway kind stack. Non-local stacks are refused by
@@ -132,9 +136,9 @@ preview: $(PREVIEW_GUARD) stack-select ## [Lifecycle] pulumi preview for STACK (
 	@export TELEPORT_ALLOW_KIND_CONTEXT=1; $(PULUMI) preview --stack $(STACK) --diff $(PULUMI_ARGS)
 
 .PHONY: deploy
-deploy: stack-init ## [Lifecycle] pulumi up only (no kind/images)
+deploy: stack-init ## [Lifecycle] pulumi up only (no kind/images); live progress line, full stream in .logs/pulumi-up-$(STACK).log
 	@$(UI) ui::section "pulumi up ($(STACK))"
-	@$(PULUMI) up --stack $(STACK) --yes --skip-preview $(PULUMI_ARGS)
+	@$(SCRIPTS)/pulumi-run.sh up $(STACK) $(PULUMI_ARGS)
 
 .PHONY: wait
 wait: ## [Lifecycle] Wait until Teleport proxy/auth/operator are ready
@@ -142,35 +146,56 @@ wait: ## [Lifecycle] Wait until Teleport proxy/auth/operator are ready
 	@$(SCRIPTS)/wait-teleport.sh
 
 .PHONY: up
-up: ## [Lifecycle] Full bring-up: doctor → kind → images → pulumi up → wait → summary
-	@$(UI) ui::section "1/5 Toolchain"
+up: ## [Lifecycle] First run and every run: doctor → tsh/deps → TLS (LOCAL_TLS=0 skips) → kind → images → pulumi up → wait → users → summary → web login (WEB_LOGIN=0 skips)
+	@$(UI) ui::section "1/7 Toolchain"
 	@$(SCRIPTS)/doctor.sh >/dev/null 2>&1 && $(UI) ui::ok "doctor passed" || { $(SCRIPTS)/doctor.sh; exit 1; }
-	@$(UI) ui::section "2/5 kind cluster"
+	@test -x $(REPO_ROOT)/bin/tsh || $(SCRIPTS)/install-tsh.sh
+	@test -d $(REPO_ROOT)/node_modules || $(MAKE) --no-print-directory deps
+	@$(UI) ui::section "2/7 TLS certificate (optional)"
+	@$(SCRIPTS)/local-tls.sh
+	@$(UI) ui::section "3/7 kind cluster"
 	@$(SCRIPTS)/kind-up.sh
-	@$(UI) ui::section "3/5 Service images"
+	@$(UI) ui::section "4/7 Service images"
 	@$(SCRIPTS)/load-images.sh $(IMAGE_TAG)
-	@$(UI) ui::section "4/5 Pulumi ($(STACK))"
+	@$(UI) ui::section "5/7 Pulumi ($(STACK))"
 	@$(MAKE) --no-print-directory stack-init
-	@$(PULUMI) up --stack $(STACK) --yes --skip-preview $(PULUMI_ARGS)
-	@$(UI) ui::section "5/5 Waiting for Teleport"
+	@$(SCRIPTS)/pulumi-run.sh up $(STACK) $(PULUMI_ARGS)
+	@$(UI) ui::section "6/7 Waiting for Teleport"
 	@$(SCRIPTS)/wait-teleport.sh
+	@$(UI) ui::section "7/7 Local users"
+	@if [ "$(STACK)" = local ]; then $(SCRIPTS)/bootstrap-users.sh; else $(UI) ui::info "STACK=$(STACK): users come from SSO (make github-sso)"; fi
 	@$(MAKE) --no-print-directory summary
+	@if [ "$(STACK)" = local ] && [ "$(WEB_LOGIN)" != 0 ] && [ -t 1 ] && [ -z "$(CI)" ]; then $(SCRIPTS)/web-login.sh; fi
+
+.PHONY: tls
+tls: ## [Lifecycle] Browser-trusted certificate for the local proxy via mkcert (opt in any time; then: make deploy)
+	@LOCAL_TLS=1 $(SCRIPTS)/local-tls.sh
 
 .PHONY: summary
 summary: ## [Lifecycle] Print the post-deploy summary box
-	@$(UI) ui::box "Teleport is up" \
-	  "Web UI      https://$(PROXY_ADDR)   (self-signed cert)" \
-	  "Login       make login          (GitHub SSO)" \
-	  "            make login-local    (local admin; first run: make bootstrap-admin)" \
+	@$(UI) TLS_NOTE="$$(source $(SCRIPTS)/_common.sh; common::tls_note)"; \
+	  ui::box "Teleport is up" \
+	  "Web UI      https://$(PROXY_ADDR)   ($$TLS_NOTE)" \
+	  "Login       make login          (tsh; GitHub SSO if configured, else admin via password+TOTP, no prompts)" \
+	  "            make web-login      (browser: prints user / password / TOTP; USER_NAME=alice|bob)" \
+	  "Optional    make github-sso     (switch the login to GitHub SSO)" \
 	  "Dashboard   make status  /  make urls  /  make requests" \
 	  "Agent REPL  make agent-cli" \
 	  "Tear down   make down"
 
 .PHONY: down
-down: secrets-guard ## [Lifecycle] pulumi destroy + delete the kind cluster
+down: secrets-guard ## [Lifecycle] pulumi destroy + delete the kind cluster (local: the dead stack state is dropped too)
 	@$(UI) ui::section "Tearing down $(STACK)"
-	@-$(PULUMI) login $(PULUMI_BACKEND_URL) >/dev/null 2>&1 && $(PULUMI) destroy --stack $(STACK) --yes --skip-preview
-	@-$(UI) ui::spinner "Deleting kind cluster $(KIND_CLUSTER)" kind delete cluster --name $(KIND_CLUSTER)
+	@$(UI) if (cd $(INFRA) && pulumi login $(PULUMI_BACKEND_URL) >/dev/null 2>&1 && pulumi stack select $(STACK) >/dev/null 2>&1); then \
+	    $(SCRIPTS)/pulumi-run.sh destroy $(STACK) --exclude-protected || true; \
+	    if [ "$(STACK)" = local ]; then :; else ui::info "protected resources (namespace, state PVC) are kept on purpose: pulumi state unprotect + pulumi destroy to remove them"; fi; \
+	  else ui::info "no Pulumi stack '$(STACK)' in $(PULUMI_BACKEND_URL) — nothing to destroy"; fi
+	@if [ "$(STACK)" = local ]; then \
+	  if kind get clusters 2>/dev/null | grep -qx "$(KIND_CLUSTER)"; then $(UI) ui::spinner "Deleting kind cluster $(KIND_CLUSTER)" kind delete cluster --name $(KIND_CLUSTER) || true; \
+	  else $(UI) ui::info "kind cluster $(KIND_CLUSTER) already gone"; fi; \
+	  (cd $(INFRA) && pulumi stack rm $(STACK) --yes --force --preserve-config >/dev/null 2>&1) && $(UI) ui::ok "dropped the stack state of '$(STACK)' (the cluster it described is gone; Pulumi.local.yaml kept)" || true; \
+	  rm -f tests/.state/users.json tests/.state/harness.identity .logs/.totp-window-*; \
+	  $(UI) ui::ok "local stack torn down — seeded credentials removed; make up recreates everything"; fi
 
 .PHONY: nuke
 nuke: down ## [Lifecycle] down + remove local state, seeded credentials and ./bin
@@ -178,17 +203,24 @@ nuke: down ## [Lifecycle] down + remove local state, seeded credentials and ./bi
 	@$(UI) ui::ok "local state removed"
 
 # ---------------------------------------------------------------------------- access
+.PHONY: bootstrap-users
+bootstrap-users: ## [Access] Enrol local users headlessly (password + TOTP into tests/.state/users.json): USERS=admin,alice,bob
+	@$(SCRIPTS)/bootstrap-users.sh $(or $(USERS),admin,alice,bob)
+
 .PHONY: bootstrap-admin
-bootstrap-admin: ## [Access] Print a reset link to set the local admin password + OTP
+bootstrap-admin: ## [Access] Re-enrol the local break-glass admin (rotates its password + TOTP)
 	@$(SCRIPTS)/bootstrap-admin.sh admin
 
 .PHONY: login
-login: proxy-guard ## [Access] tsh login via GitHub SSO (opens the browser)
-	@$(TSH) login --auth github && $(TSH) status
+login: proxy-guard ## [Access] tsh login: GitHub SSO when configured, otherwise headless local login (USER_NAME=admin)
+	@$(SCRIPTS)/login.sh $(USER_NAME)
 
 .PHONY: login-local
-login-local: proxy-guard ## [Access] tsh login as a local user (USER_NAME=admin; lock it again afterwards: make tctl ARGS="lock --user=admin --message=break-glass")
-	@$(TSH) login --auth local --user $(or $(USER_NAME),admin) && $(TSH) status
+login-local: login ## [Access] Alias of make login (USER_NAME=alice; lock admin afterwards: make tctl ARGS="lock --user=admin --message=break-glass")
+
+.PHONY: web-login
+web-login: proxy-guard ## [Access] Open the web UI and print user / password / current TOTP code (USER_NAME=admin|alice|bob)
+	@$(SCRIPTS)/web-login.sh $(USER_NAME)
 
 .PHONY: github-sso
 github-sso: stack-init ## [Access] Store GitHub OAuth App credentials for STACK (prompts)

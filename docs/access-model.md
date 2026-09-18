@@ -86,11 +86,11 @@ access-broker  ── policy.yaml (generated from the catalog) ──▶  deny |
 
 | Stack | Local users | SSO team → roles | How to administer |
 |---|---|---|---|
-| `local` (kind) | `admin` = `editor, auditor` (no `access`, no `approver`, no logins); `alice` = `requester`; `bob` = `requester, approver` | optional | `make bootstrap-admin`, then **lock the user after use**: `deploy/scripts/tctl.sh lock --user=admin --message="break-glass"` |
+| `local` (kind) | `admin` = `editor, auditor` (no `access`, no `approver`, no logins); `alice` = `requester`; `bob` = `requester, approver` | optional | `make up` enrols `admin` headlessly (credentials in `tests/.state/users.json`); `make login` / `make web-login`; `make bootstrap-admin` rotates them. **Lock the user after use**: `deploy/scripts/tctl.sh lock --user=admin --message="break-glass"` |
 | `dev-*`, `prod-*` | none (`localAuth: false`, `secondFactors: [webauthn]`) | `teleport-users` → `requester`; `teleport-approvers` → `requester, approver`; `teleport-admins` → `requester, approver, auditor` | request `break-glass-editor` (approved by another approver, 1h) |
 
 `make github-sso` writes exactly this mapping and, off the local stack, switches `localAuth` off and second factors
-to WebAuthn only. `deploy/scripts/bootstrap-admin.sh` refuses to run for non-local stacks.
+to WebAuthn only. `deploy/scripts/bootstrap-users.sh` (and `bootstrap-admin.sh`) refuse to run for non-local stacks.
 
 ### Invariants enforced by `buildProfile` (`src/config/profile.ts`)
 
@@ -115,7 +115,7 @@ scaffolded cloud stack files.
 | `teleport-mcp` | read users/roles/inventory, `access_request: create` | always |
 | `access-broker` | `access_request: [list, read, update]`, `access_plugin_data: update` | always |
 | `access-agent` | `user: [list, read]` | when `services.agent.enabled` |
-| `ci-harness` | `access_request` full, `user: [list, read, update]` (reset tokens for alice/bob), impersonate `alice`/`bob` as `requester`/`approver` only | kind only (`services.harness.enabled`) |
+| `ci-harness` | `access_request` full, `user: [list, read, update]` (reset tokens for admin/alice/bob: this bot can rotate any local user's password, kind only), impersonate `alice`/`bob` as `requester`/`approver` only | kind only (`services.harness.enabled`) |
 
 Bots see nodes/databases/Kubernetes clusters (wildcard labels, no logins/users/groups so they cannot connect) and
 apps only in `local`/`dev` (`deny.app_labels: { env: [prod] }`). Every Bot has `max_session_ttl: 2h`. No bot may

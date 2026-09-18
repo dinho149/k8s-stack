@@ -42,6 +42,7 @@ describe("buildProfile", () => {
     expect(p.teleport.insecure).toBe(true);
     expect(p.labels).toEqual({ env: "local", "managed-by": "pulumi", stack: "local" });
     expect(p.services.harness.enabled).toBe(true);
+    expect(p.tls).toEqual({ mode: "local-files", certFile: "../.state/tls/teleport.crt", keyFile: "../.state/tls/teleport.key", caFile: "../.state/tls/ca.crt" });
   });
 
   it("lets stack config override platform defaults", () => {
@@ -78,6 +79,7 @@ describe("buildProfile", () => {
     expect(p.exposure.type).toBe("loadbalancer");
     expect(p.tls.mode).toBe("cert-manager");
     expect(cloud({ exposure: { type: "nodeport" } })).toThrow(/nodeport/);
+    expect(cloud({ tls: { mode: "local-files" } })).toThrow(/local-files .* platform=kind/);
   });
 
   it("local users may hold editor/auditor locally but every role must exist", () => {

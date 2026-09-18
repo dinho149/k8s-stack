@@ -16,7 +16,8 @@ A portable [Teleport](https://goteleport.com) scaffold that runs the same way on
 ```
 make            # grouped help
 make doctor     # ✓/✗ toolchain, ports, kube context, Pulumi backend
-make up         # kind → images → pulumi up → wait → summary box
+make up         # first run and every run: tsh + deps → trusted TLS cert (mkcert) → kind → images → pulumi up → wait → local users
+make login      # tsh login with no prompts (GitHub SSO once configured); make web-login prints the web UI credentials
 make status     # dashboard: pods, Teleport inventory, pending requests, your session
 ```
 

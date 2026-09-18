@@ -31,7 +31,7 @@ Then `make preview STACK=dev-eks` and `make deploy STACK=dev-eks`. `insecureLoca
 |---|---|---|
 | exposure | NodePort 30080 → host 3080 | internal `LoadBalancer` + `sourceRanges` (NLB/RBS annotations) or Ingress |
 | DNS | CoreDNS rewrite of the public host (LocalDns) | real DNS |
-| TLS | self-signed, `tsh --insecure` | cert-manager / ACME |
+| TLS | mkcert / self-signed, `tsh --insecure` | cert-manager / ACME |
 | MFA | OTP, local auth allowed | WebAuthn only, `localAuth: false`, GitHub SSO required (admin actions need MFA for humans; the bots are exempt) |
 | replicas | 1 auth / 1 proxy | 2 auth / 2 proxy |
 | supply chain | local images by tag | images by digest, optional Kyverno signature enforcement |

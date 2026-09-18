@@ -3,6 +3,9 @@
  * pieces the chart cannot express for us: the namespace, the license secret, and on kind a
  * NodePort Service so the proxy is reachable on the host without a LoadBalancer.
  */
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as k8s from "@pulumi/kubernetes";
 import * as pulumi from "@pulumi/pulumi";
 import type { EnvProfile } from "../config/profile";
@@ -34,8 +37,51 @@ export function internalLoadBalancerAnnotations(platform: EnvProfile["platform"]
   }
 }
 
+/** Name of the kubernetes.io/tls Secret that carries the mkcert certificate on kind (tls.mode=local-files). */
+export const LOCAL_TLS_SECRET = "teleport-local-tls";
+
+export interface LocalTlsFiles {
+  cert: string;
+  key: string;
+  /** The issuing mkcert root: the proxy refuses a leaf whose chain it cannot verify locally. */
+  ca: string;
+  /** sha256 of certificate + CA PEM: annotates the proxy pods so a regenerated certificate rolls them. */
+  checksum: string;
+}
+
+/** Where the chart mounts tls.existingSecretName; ca.crt lands there too. */
+export const LOCAL_TLS_MOUNT = "/etc/teleport-tls";
+/** Go reads every directory in SSL_CERT_DIR: the system bundle stays, the mkcert root is added. */
+export const LOCAL_TLS_SSL_CERT_DIR = `/etc/ssl/certs:${LOCAL_TLS_MOUNT}`;
+
+/**
+ * Reads the PEM files of tls.mode=local-files (written by deploy/scripts/local-tls.sh). Returns undefined
+ * for every other mode, and — with one warning — when either file is missing, so CI and machines without
+ * mkcert keep deploying with the chart's self-signed certificate.
+ */
+export function readLocalTlsFiles(
+  p: EnvProfile,
+  projectRoot: string = path.resolve(__dirname, "..", ".."),
+  warn: (msg: string) => void = (m) => pulumi.log.warn(m),
+): LocalTlsFiles | undefined {
+  if (p.tls.mode !== "local-files") return undefined;
+  const files = [p.tls.certFile, p.tls.keyFile, p.tls.caFile].map((f) => path.resolve(projectRoot, f));
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length) {
+    warn(`tls.mode=local-files: ${missing.join(", ")} not found — the proxy keeps its self-signed certificate (browser warning). Run: make tls`);
+    return undefined;
+  }
+  const [cert, key, ca] = files.map((f) => fs.readFileSync(f, "utf8"));
+  return { cert, key, ca, checksum: crypto.createHash("sha256").update(cert).update(ca).digest("hex") };
+}
+
+export interface ClusterValuesOptions {
+  /** Set by the component when tls.mode=local-files and the PEM files exist. */
+  tlsSecret?: { name: string; checksum: string };
+}
+
 /** Pure function: chart values for a profile. Unit-tested in test/cluster-values.test.ts. */
-export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
+export function renderClusterValues(p: EnvProfile, opts: ClusterValuesOptions = {}): Record<string, unknown> {
   const replicaCount = p.platform === "kind" ? 1 : 2;
   const rpId = p.auth.webauthnRpId ?? p.teleport.publicHost;
   const values: Record<string, unknown> = {
@@ -139,6 +185,22 @@ export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
     case "existing-secret":
       values.tls = { existingSecretName: p.tls.secretName };
       break;
+    case "local-files":
+      if (opts.tlsSecret) {
+        values.tls = { existingSecretName: opts.tlsSecret.name };
+        values.proxy = {
+          // An existing TLS secret makes the proxy Deployment "replicable": the chart then defaults to
+          // max(replicaCount, 2) pods unless the proxy override pins it.
+          highAvailability: { replicaCount },
+          // The chart only hashes its ConfigMap; hash the certificate too so a regenerated one restarts
+          // the proxy instead of waiting for https_keypairs_reload_interval (12h).
+          annotations: { pod: { "checksum/tls": opts.tlsSecret.checksum } },
+          // The proxy verifies its own chain at startup ("unable to verify HTTPS certificate chain"):
+          // trust the mkcert root from the mounted secret in addition to the system bundle.
+          extraEnv: [{ name: "SSL_CERT_DIR", value: LOCAL_TLS_SSL_CERT_DIR }],
+        };
+      }
+      break; // files missing: chart self-signed (readLocalTlsFiles already warned)
   }
 
   // --- backend
@@ -227,6 +289,25 @@ export class TeleportCluster extends pulumi.ComponentResource {
       );
     }
 
+    // kind: the mkcert certificate (make tls) becomes a kubernetes.io/tls Secret the chart mounts on the proxy.
+    // Not protected: deploy/scripts/local-tls.sh regenerates it and the chart falls back to self-signed without it.
+    const localTls = readLocalTlsFiles(p);
+    let tlsSecret: ClusterValuesOptions["tlsSecret"];
+    if (localTls) {
+      deps.push(
+        new k8s.core.v1.Secret(
+          `${name}-local-tls`,
+          {
+            metadata: { name: LOCAL_TLS_SECRET, namespace: this.namespace.metadata.name, labels: k8sLabels(p, "teleport", "local-tls") },
+            type: "kubernetes.io/tls",
+            stringData: { "tls.crt": localTls.cert, "tls.key": localTls.key, "ca.crt": localTls.ca },
+          },
+          child,
+        ),
+      );
+      tlsSecret = { name: LOCAL_TLS_SECRET, checksum: localTls.checksum };
+    }
+
     this.chart = installChart(
       `${name}-chart`,
       {
@@ -234,7 +315,7 @@ export class TeleportCluster extends pulumi.ComponentResource {
         version: p.teleport.version,
         namespace: this.namespace.metadata.name,
         releaseName: p.teleport.releaseName,
-        values: renderClusterValues(p),
+        values: renderClusterValues(p, { tlsSecret }),
       },
       { parent: this, dependsOn: deps },
     );

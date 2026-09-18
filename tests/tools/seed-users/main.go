@@ -3,6 +3,9 @@
 //
 //	TELEPORT_PROXY=teleport.127.0.0.1.nip.io:3080 HARNESS_IDENTITY=tests/.state/harness.identity TELEPORT_INSECURE=1 \
 //	  go run ./seed-users -users alice,bob -out tests/.state/users.json
+//
+// A reset token deletes the user's existing MFA devices, so `make up` passes -skip-existing to leave
+// already-enrolled users alone; -force re-enrols them (make bootstrap-admin).
 package main
 
 import (
@@ -19,17 +22,23 @@ import (
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/trace"
 	"github.com/pquerna/otp/totp"
 )
 
 type cred struct {
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totp_secret"`
+	// Enrolment itself consumes a TOTP code; Teleport rejects a reused code, so the login helpers
+	// (deploy/scripts/lib/tsh-login.sh) wait for a window later than this timestamp.
+	EnrolledAt int64 `json:"enrolled_at"`
 }
 
 func main() {
 	users := flag.String("users", "alice,bob", "comma separated local users to enrol")
 	out := flag.String("out", "tests/.state/users.json", "credentials file to write")
+	skipExisting := flag.Bool("skip-existing", false, "leave users that are already in the credentials file untouched")
+	force := flag.Bool("force", false, "re-enrol users even when -skip-existing is set")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -47,6 +56,10 @@ func main() {
 	for _, u := range strings.Split(*users, ",") {
 		u = strings.TrimSpace(u)
 		if u == "" {
+			continue
+		}
+		if _, ok := existing[u]; ok && *skipExisting && !*force {
+			fmt.Printf("skipping %s (already enrolled)\n", u)
 			continue
 		}
 		c, err := enrol(ctx, clt, u)
@@ -77,7 +90,7 @@ func connect(ctx context.Context) (*client.Client, error) {
 
 // enrol resets the user's authentication and completes it with a fresh password and TOTP device.
 func enrol(ctx context.Context, clt *client.Client, user string) (cred, error) {
-	tok, err := clt.CreateResetPasswordToken(ctx, &proto.CreateResetPasswordTokenRequest{Name: user, TTL: proto.Duration(5 * time.Minute), Type: "password"})
+	tok, err := resetToken(ctx, clt, user)
 	if err != nil {
 		return cred{}, fmt.Errorf("create reset token: %w", err)
 	}
@@ -104,7 +117,28 @@ func enrol(ctx context.Context, clt *client.Client, user string) (cred, error) {
 	if err != nil {
 		return cred{}, fmt.Errorf("change authentication: %w", err)
 	}
-	return cred{Password: pw, TOTPSecret: t.GetSecret()}, nil
+	return cred{Password: pw, TOTPSecret: t.GetSecret(), EnrolledAt: time.Now().Unix()}, nil
+}
+
+// resetToken retries while the user does not exist yet: the Teleport operator creates TeleportUser
+// CRs asynchronously and `make up` calls this right after the proxy answers.
+func resetToken(ctx context.Context, clt *client.Client, user string) (types.UserToken, error) {
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		tok, err := clt.CreateResetPasswordToken(ctx, &proto.CreateResetPasswordTokenRequest{Name: user, TTL: proto.Duration(5 * time.Minute), Type: "password"})
+		if err == nil {
+			return tok, nil
+		}
+		if !trace.IsNotFound(err) || time.Now().After(deadline) {
+			return nil, err
+		}
+		fmt.Printf("user %s not created yet, retrying...\n", user)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
 }
 
 func randomPassword() string {
@@ -124,5 +158,3 @@ func fail(err error) {
 	fmt.Fprintln(os.Stderr, "error:", err)
 	os.Exit(1)
 }
-
-var _ = types.KindUser

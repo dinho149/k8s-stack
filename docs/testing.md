@@ -29,13 +29,15 @@
 | `08_service_auth_fails_closed.sh` | broker approve with a body `approver` and no assertion -> 401 (400 with one); MCP with bearer + `X-Teleport-User` but no assertion -> 401 |
 
 Headless logins use `tests/tools/seed-users` (reset token -> TOTP registration -> password) and `tests/tools/totp`;
-credentials land in `tests/.state/users.json` (gitignored, created under `umask 077`). Only the 30-second TOTP
-window index of the last login is remembered (`.logs/.totp-window-<user>`), never a code. The Go tests connect with
+credentials land in `tests/.state/users.json` (gitignored, created under `umask 077`, with an `enrolled_at`
+timestamp because the enrolment consumes a code). `deploy/scripts/lib/tsh-login.sh` (+ `tsh-login.exp`) drives
+`tsh login` for `make login` and the e2e scripts alike. Only the 30-second TOTP window index of the last code handed
+out is remembered (`.logs/.totp-window-<user>`), never a code. The Go tests connect with
 the `ci-harness` bot identity (`make harness-identity`, kind stack only: the harness bot is not deployed elsewhere).
 
 TLS verification is skipped (`tsh --insecure`, `curl -k`) in exactly one case: `STACK=local` **and** the proxy is
-`*.127.0.0.1.nip.io`. `deploy/scripts/_common.sh` and `tests/e2e/lib.sh` compute `TSH_INSECURE_FLAG` /
-`CURL_INSECURE_FLAG` once; a loopback proxy with any other stack aborts. Nothing else may spell `--insecure`
+`*.127.0.0.1.nip.io`. `deploy/scripts/_common.sh` computes `TSH_INSECURE_FLAG` /
+`CURL_INSECURE_FLAG` once (`tests/e2e/lib.sh` sources it); a loopback proxy with any other stack aborts. Nothing else may spell `--insecure`
 (enforced by the `tsh-insecure-guard` pre-commit hook and `.semgrep.yml`).
 
 ## Local guardrails (pre-commit)
@@ -91,7 +93,7 @@ Every workflow declares `permissions: contents: read` at the top, grants per job
 | `ci / repo-scan` | ci.yml | Trivy `fs` (vuln + secret + misconfig) on the working tree | `trivy fs --scanners vuln,secret,misconfig .` |
 | `ci / image-scan` | ci.yml | builds the three images (no push), Trivy (vuln+secret+misconfig, fail HIGH/CRITICAL, SARIF) + Grype | `make images` then `trivy image k8s-teleport/<name>:dev` |
 | `ci / preview-cloud-stacks` | ci.yml | `pulumi preview` of every cloud stack against kind (`CI_PREVIEW=1`) | `CI_PREVIEW=1 make preview STACK=dev-eks ...` |
-| `ci / kind-e2e` | ci.yml | full bring-up, integration + e2e; `.logs` uploaded as a 5-day artifact on failure | `make up seed-test-users test` |
+| `ci / kind-e2e` | ci.yml | full bring-up, integration + e2e; `.logs` uploaded as a 5-day artifact on failure | `make up test` |
 | `codeql` | codeql.yml | CodeQL `security-extended` for Go and JS/TS (push, PR, weekly) | n/a (VS Code CodeQL extension) |
 | `scorecard` | scorecard.yml | OpenSSF Scorecard, results published | `scorecard --repo=...` |
 | `claude-security-review` | claude-security-review.yml | Anthropic security reviewer with `.github/claude-security-focus.md`; fails on HIGH/CRITICAL | `/security-review` |

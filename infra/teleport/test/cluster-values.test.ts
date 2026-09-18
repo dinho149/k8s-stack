@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import * as pulumi from "@pulumi/pulumi";
 import { buildProfile } from "../src/config/profile";
-import { internalLoadBalancerAnnotations, renderClusterValues } from "../src/components/TeleportCluster";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { internalLoadBalancerAnnotations, readLocalTlsFiles, renderClusterValues } from "../src/components/TeleportCluster";
 
 const kind = buildProfile({ platform: "kind", kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" } }, "local");
 const github = { clientId: "id", organization: "org", teamsToRoles: [{ team: "eng", roles: ["requester"] }] };
@@ -120,5 +123,48 @@ describe("renderCorefile", () => {
     expect(c).toContain("name regex (.*\\.)?teleport\\.127\\.0\\.0\\.1\\.nip\\.io teleport-cluster-nodeport.teleport.svc.cluster.local");
     expect(c).toContain("answer auto");
     expect(c).toContain("kubernetes cluster.local");
+  });
+});
+
+describe("local-files TLS (mkcert on kind)", () => {
+  it("renders nothing TLS-specific when the files are absent (chart self-signed)", () => {
+    const v = renderClusterValues(kind) as any;
+    expect(v.tls).toBeUndefined();
+    expect(v.proxy).toBeUndefined();
+  });
+
+  it("mounts the secret, pins one proxy replica and hashes the certificate onto the proxy pods", () => {
+    const v = renderClusterValues(kind, { tlsSecret: { name: "teleport-local-tls", checksum: "abc" } }) as any;
+    expect(v.tls).toEqual({ existingSecretName: "teleport-local-tls" });
+    // an existing secret makes the proxy "replicable": without this the chart runs max(replicaCount, 2) pods
+    expect(v.proxy.highAvailability.replicaCount).toBe(1);
+    expect(v.proxy.annotations.pod["checksum/tls"]).toBe("abc");
+    // the proxy verifies its own chain at startup: the mounted ca.crt joins the system roots
+    expect(v.proxy.extraEnv).toEqual([{ name: "SSL_CERT_DIR", value: "/etc/ssl/certs:/etc/teleport-tls" }]);
+  });
+
+  it("readLocalTlsFiles: both files -> cert/key/sha256; one missing -> undefined + one warning; other modes -> no fs access", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tls-"));
+    const warnings: string[] = [];
+    const warn = (m: string) => warnings.push(m);
+    expect(readLocalTlsFiles(kind, dir, warn)).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/make tls/);
+    fs.mkdirSync(path.join(dir, ".state", "tls"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".state", "tls", "teleport.crt"), "CERT");
+    fs.writeFileSync(path.join(dir, ".state", "tls", "teleport.key"), "KEY");
+    // kind default paths are relative to infra/teleport: "../.state/tls/..." resolves against projectRoot/..
+    const project = path.join(dir, "teleport");
+    fs.mkdirSync(project);
+    expect(readLocalTlsFiles(kind, project, warn)).toBeUndefined(); // ca.crt still missing
+    expect(warnings).toHaveLength(2);
+    expect(warnings[1]).toMatch(/ca\.crt/);
+    fs.writeFileSync(path.join(dir, ".state", "tls", "ca.crt"), "CA");
+    const got = readLocalTlsFiles(kind, project, warn);
+    expect(got).toMatchObject({ cert: "CERT", key: "KEY", ca: "CA" });
+    expect(got?.checksum).toMatch(/^[0-9a-f]{64}$/);
+    expect(warnings).toHaveLength(2);
+    expect(readLocalTlsFiles(cloud(), "/nonexistent", warn)).toBeUndefined();
+    expect(warnings).toHaveLength(2);
   });
 });
