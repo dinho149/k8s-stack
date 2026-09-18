@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # the palette/glyph variables are consumed by the scripts that source this file
 # ui.sh — tiny terminal UI helpers used by every script and Make target.
 #
 # Pure bash + tput. Colours and unicode switch themselves off when stdout is

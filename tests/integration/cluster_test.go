@@ -13,7 +13,7 @@ import (
 	"github.com/dinho/k8s-teleport/tests/integration/harness"
 )
 
-var catalog = []string{"dev-ssh", "dev-db", "dev-k8s", "dev-app", "prod-ssh", "prod-db", "prod-k8s", "prod-app", "dba", "k8s-admin", "requester", "approver"}
+var catalog = []string{"dev-ssh", "dev-db", "dev-k8s", "dev-app", "prod-ssh", "prod-db", "prod-k8s", "prod-app", "dev-dba", "prod-dba", "k8s-admin", "break-glass-editor", "requester", "approver"}
 
 func TestRolesUsersBotsExist(t *testing.T) {
 	clt := harness.Connect(t, harness.FromEnv(t))
@@ -70,7 +70,12 @@ func TestDummyResourcesRegistered(t *testing.T) {
 			found["kube/"+r.GetKubernetesServer().GetCluster().GetName()] = r.GetKubernetesServer().GetCluster().GetAllLabels()
 		}
 	}
-	want := map[string]string{"node/ssh-dev-0": "dev", "node/ssh-prod-0": "prod", "db/postgres-dev": "dev", "db/postgres-prod": "prod", "app/httpbin": "dev", "app/cloud-console": "prod", "kube/local-kind": "local"}
+	want := map[string]string{"node/ssh-dev-0": "dev", "node/ssh-prod-0": "prod", "db/postgres-dev": "dev", "db/postgres-prod": "prod", "app/httpbin": "dev", "kube/local-kind": "local"}
+	// Service bots are denied every env=prod app (deny.app_labels), so the harness must NOT see the prod console
+	// even though it is registered (verified through tctl in the e2e suite).
+	if _, visible := found["app/cloud-console"]; visible {
+		t.Errorf("app/cloud-console is visible to the harness bot; bot roles must deny prod apps")
+	}
 	for name, env := range want {
 		labels, ok := found[name]
 		if !ok {
@@ -87,7 +92,7 @@ func TestBrokerAutoApprovesLowRisk(t *testing.T) {
 	clt := harness.Connect(t, harness.FromEnv(t))
 	r := harness.CreateRequest(t, clt, "alice", []string{"dev-ssh"}, time.Hour, "integration: low risk")
 	got := harness.WaitState(t, clt, r.GetName(), types.RequestState_APPROVED, 60*time.Second)
-	if ann := got.GetResolveAnnotations(); ann["access-broker/mode"] == nil || ann["access-broker/mode"][0] != "auto" {
+	if ann := got.GetResolveAnnotations(); len(ann["access-broker/mode"]) == 0 || ann["access-broker/mode"][0] != "auto" {
 		t.Fatalf("expected broker auto annotation, got %v", ann)
 	}
 }
@@ -119,5 +124,35 @@ func TestBrokerDeniesAdminRoles(t *testing.T) {
 	defer cancel()
 	if _, err := clt.CreateAccessRequestV2(ctx, req); err == nil {
 		t.Fatal("alice must not be able to request editor")
+	}
+}
+
+func TestBrokerHoldsMixedTierRequest(t *testing.T) {
+	// A single low-risk role must never drag a high-risk role through auto-approval.
+	clt := harness.Connect(t, harness.FromEnv(t))
+	ctx := context.Background()
+	r := harness.CreateRequest(t, clt, "alice", []string{"dev-ssh", "prod-ssh"}, time.Hour, "integration: mixed tier")
+	time.Sleep(15 * time.Second)
+	reqs, err := clt.GetAccessRequests(ctx, types.AccessRequestFilter{ID: r.GetName()})
+	if err != nil || len(reqs) != 1 {
+		t.Fatalf("get: %v %d", err, len(reqs))
+	}
+	if reqs[0].GetState() != types.RequestState_PENDING {
+		t.Fatalf("mixed-tier request must stay pending, is %s", reqs[0].GetState())
+	}
+}
+
+func TestBrokerDeniesNonCatalogRoleViaPolicy(t *testing.T) {
+	// break-glass-editor is requestable but high tier: it must never be auto-approved.
+	clt := harness.Connect(t, harness.FromEnv(t))
+	ctx := context.Background()
+	r := harness.CreateRequest(t, clt, "alice", []string{"break-glass-editor"}, 30*time.Minute, "integration: break glass")
+	time.Sleep(15 * time.Second)
+	reqs, err := clt.GetAccessRequests(ctx, types.AccessRequestFilter{ID: r.GetName()})
+	if err != nil || len(reqs) != 1 {
+		t.Fatalf("get: %v %d", err, len(reqs))
+	}
+	if reqs[0].GetState() == types.RequestState_APPROVED {
+		t.Fatalf("break-glass-editor must not be auto-approved")
 	}
 }

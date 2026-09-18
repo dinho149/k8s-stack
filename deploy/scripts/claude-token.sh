@@ -5,7 +5,7 @@
 # this script does not try to scrape its output. Paste the token when asked; it is stored as the Pulumi
 # secret teleport:chat.claudeCodeOauthToken and the agent is switched to auth=subscription.
 source "$(dirname "$0")/_common.sh"
-cd "$REPO_ROOT/infra/teleport"
+cd "$REPO_ROOT/infra/teleport" || exit 1
 ui::section "Claude subscription token for stack $STACK"
 ui::require claude pulumi
 ui::info "1. A browser window will open: sign in with the Claude Pro/Max account that should pay for the agent."
@@ -21,7 +21,9 @@ tok="${tok//[[:space:]]/}"
 [[ -n "$tok" ]] || ui::die "no token entered"
 [[ "$tok" == sk-ant-oat* || "$tok" == oat* ]] || ui::warn "token does not look like a Claude Code OAuth token (expected sk-ant-oat…); storing anyway"
 [[ "$tok" == sk-ant-api* ]] && ui::die "that is an Anthropic API key, not a subscription token — use teleport:chat.anthropicApiKey and auth=api-key instead"
-pulumi config set --stack "$STACK" --secret --path 'teleport:chat.claudeCodeOauthToken' "$tok"
+# The token goes to pulumi over stdin (never argv: `ps` and shell history must not see it).
+printf '%s' "$tok" | pulumi config set --stack "$STACK" --secret --path 'teleport:chat.claudeCodeOauthToken'
+unset tok
 pulumi config set --stack "$STACK" --path 'teleport:services.agent.auth' subscription
 pulumi config set --stack "$STACK" --path 'teleport:services.agent.enabled' true
 ui::ok "stored (encrypted) in Pulumi.$STACK.yaml; agent auth=subscription, enabled=true"

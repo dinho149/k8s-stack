@@ -23,9 +23,11 @@ merges them over per-platform defaults (`src/config/platforms/*.ts`), validates 
 |---|---|
 | `TeleportCluster` | namespace, license secret, `teleport-cluster` Helm chart (auth, proxy, operator + CRDs), NodePort Service on kind |
 | `AccessPolicy` | roles (from `src/policy/catalog.ts`), `requester`/`approver`, service roles, Bots, join tokens, local users, GitHub connector |
-| `TeleportKubeAgent` | `teleport-kube-agent` chart enrolling the cluster and hosting the app/db services |
-| `DummyResources` | SSH StatefulSets, PostgreSQL with TLS, httpbin, fake cloud console, plus their Teleport App/Database CRs |
-| `AccessServices` | tbot identities, Deployments and Secrets for the MCP server, access broker and chat agent |
+| `TeleportKubeAgent` | one `teleport-kube-agent` release per env in the stack (`teleport-kube-agent`, `-dev`, `-prod`), each serving only the App/Database CRs of its env |
+| `DummyResources` | non-root SSH StatefulSets (one ServiceAccount + join token per env), `postgres-dev`/`postgres-prod` with TLS + Teleport client-certificate auth, httpbin, fake cloud console, plus their Teleport App/Database CRs |
+| `AccessServices` | tbot identities, Deployments and Secrets for the MCP server, access broker and chat agent; the CI harness bot only when `services.harness.enabled` (kind) |
+| `NetworkPolicies` | default-deny ingress + egress in all four namespaces plus the allow-list below (every platform, kind included) |
+| `ImagePolicy` | Kyverno `ClusterPolicy` admitting only cosign-signed images from `images.registry` and rejecting `:latest` (cloud stacks with `images.verifySignatures`) |
 | `EnterpriseAccess` | Access Monitoring Rules and official Slack/Teams plugin charts (`edition: enterprise` only) |
 
 All Teleport configuration is expressed as operator CRs in the `teleport` namespace, so no Teleport credentials are
@@ -52,8 +54,63 @@ call `SetAccessRequestState` and the MCP server create pending requests on a use
 
 | Stack | Platform | Exposure | TLS | Backend | Login |
 |---|---|---|---|---|---|
-| `local` | kind | NodePort 30080 → host 3080 | self-signed (`tsh --insecure`) | standalone PVC | GitHub SSO (once configured) or local |
-| `dev-eks` / `dev-gke` / `dev-aks` | existing cloud cluster | LoadBalancer | cert-manager | standalone by default, `aws`/`gcp`/`azure` chartMode when backends exist | GitHub SSO + WebAuthn |
-| `prod-eks` | existing cloud cluster | LoadBalancer | cert-manager | `aws` chartMode | GitHub SSO + WebAuthn |
+| `local` | kind | NodePort 30080 → host 3080 (+ fixed 30081 for the in-cluster port) | self-signed (`tsh --insecure`) | standalone PVC | GitHub SSO (once configured) or local, OTP |
+| `dev-eks` / `dev-gke` / `dev-aks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | standalone by default, `aws`/`gcp`/`azure` chartMode when backends exist | GitHub SSO + WebAuthn only, no local auth |
+| `prod-eks` | existing cloud cluster | internal LoadBalancer + `sourceRanges` | cert-manager | `aws` chartMode (audit log mirrored to stdout) | GitHub SSO + WebAuthn only, no local auth |
 
 Cloud stacks are scaffolds: they must pass `make preview STACK=…`; only `local` is deployed and tested end to end.
+
+## Session controls (chart values, `TeleportCluster.renderClusterValues`)
+
+Rendered into the auth pods' `teleport.yaml` on every stack: `locking_mode: strict`, `session_recording: node-sync`,
+`require_session_mfa: true`, `disconnect_expired_cert: true`, `client_idle_timeout: 15m`, an explicit WebAuthn
+`rp_id` (`auth.webauthnRpId`, default the public host) and `proxyProtocol: off` unless the load balancer is declared
+to send PROXY headers (`exposure.proxyProtocol`). Cloud stacks run two auth/proxy replicas.
+
+## Kubernetes hardening
+
+**Pod Security Admission.** `teleport-access` and `teleport-dummies` enforce `restricted`; `teleport` and
+`teleport-agent` enforce `baseline` with `warn`/`audit: restricted` (the charts' pods are rendered with restricted-
+compatible contexts, so flipping the label is a one-line change once verified on your cluster). Every container we
+own runs non-root with `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`,
+`seccompProfile: RuntimeDefault` and CPU/memory limits (`src/lib/security.ts`); writable paths are explicit
+`emptyDir`s. `automountServiceAccountToken` is `false` on every pod and ServiceAccount we create; workloads that join
+Teleport with the kubernetes method read a short-lived projected token instead. Each namespace we create also gets a
+`LimitRange` and a `ResourceQuota` (no NodePort/LoadBalancer Services allowed there). The kube-agent chart offers no
+`automountServiceAccountToken` value and its Kubernetes service needs the API token, so that token stays mounted.
+
+**NetworkPolicies** (`src/components/NetworkPolicies.ts`), default-deny ingress and egress everywhere, DNS allowed
+everywhere, then:
+
+| namespace | pod | ingress | egress |
+|---|---|---|---|
+| teleport | proxy | anyone → 3080 (front door) | auth:3025, dummies ssh:3022, internet:443 only with ACME |
+| teleport | auth | proxy, operator, the three other namespaces → 3025 | kube API / SSO / cloud backends (443, 6443) |
+| teleport | operator | — | auth:3025, kube API |
+| teleport-access | teleport-mcp | access-agent → 8080 | auth:3025, proxy:3080 |
+| teleport-access | access-broker | access-agent → 8081 | auth, proxy, access-agent:8082 |
+| teleport-access | access-agent | access-broker → 8082; anyone → 8083 only with the Teams/Google Chat HTTP adapters | teleport-mcp:8080, access-broker:8081, internet:443 (never private ranges) |
+| teleport-access | ci-harness (kind) | — | auth:3025, kube API |
+| teleport-agent | kube-agent(s) | — | proxy:3080, kube API, dummies 5432/3306/80/8080/4566 |
+| teleport-dummies | ssh-* | proxy → 3022 | auth:3025 |
+| teleport-dummies | postgres-*/mysql | kube-agent → 5432/3306 | proxy:3080 (fetch the Teleport DB CA) |
+| teleport-dummies | apps | kube-agent → 80/8080/4566 | — |
+
+The API server has no selectable identity and its ClusterIP is DNAT'ed before policy evaluation, so the pods that
+need it get TCP 443/6443 to `0.0.0.0/0`; those are the same pods that need SSO or cloud backends. Nothing else may
+leave the cluster.
+
+**Databases.** Teleport authenticates to self-hosted databases with a client certificate signed by its `db_client`
+CA (CN = database user). An init container fetches that CA from the proxy's public
+`/webapi/auth/export?type=db-client` endpoint; PostgreSQL's `pg_hba.conf` only admits
+`hostssl … cert clientcert=verify-full` from the network (`scram-sha-256` on the local socket, generated superuser
+password), MySQL users are created with `REQUIRE SUBJECT '/CN=<user>'`. Each instance has its own server certificate
+(SAN = its Service DNS name, 1-year validity) and the Teleport Database CRs use `tls.mode: verify-full` with that
+certificate as `ca_cert`.
+
+**Chat agent secrets.** Nothing secret is injected as an environment value. The `access-services` Secret
+(`TA_MCP_SHARED_TOKEN`, `TA_BROKER_API_TOKEN`, `TA_BROKER_WEBHOOK_SECRET`, `TA_IDENTITY_SIGNING_KEY`) is mounted at
+`/var/run/secrets/access-services/` and one Secret per credential group (`access-agent-llm`, `-slack`, `-teams`,
+`-gchat`, only for the auth mode / adapters in use) at `/var/run/secrets/chat/<group>/<ENV_NAME>`, all `0400`; the
+agent is pointed at them with `<ENV_NAME>_FILE`. The agent listens on 8082 (broker events, health) and 8083
+(`PUBLIC_PORT`, chat webhooks) so an ingress only ever exposes the latter.

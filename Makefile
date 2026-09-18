@@ -26,7 +26,11 @@ TELEPORT_VERSION ?= 18.11.1
 PROXY_ADDR      ?= teleport.127.0.0.1.nip.io:3080
 IMAGE_TAG       ?= dev
 PULUMI_BACKEND_URL      ?= file://$(REPO_ROOT)/infra/.state
+# The well-known passphrase exists ONLY for the throwaway kind stack. Non-local stacks are refused by
+# `secrets-guard` unless a real backend + KMS secrets provider (or a real passphrase) is configured.
+ifeq ($(STACK),local)
 PULUMI_CONFIG_PASSPHRASE ?= local-dev
+endif
 SCRIPTS         := $(REPO_ROOT)/deploy/scripts
 INFRA           := $(REPO_ROOT)/infra/teleport
 ifneq ($(or $(CI),$(NO_COLOR)),)
@@ -35,7 +39,25 @@ else
 PULUMI_COLOR    ?= always
 endif
 PULUMI          := cd $(INFRA) && pulumi --non-interactive --color $(PULUMI_COLOR)
-TSH             := $(REPO_ROOT)/bin/tsh --insecure --proxy $(PROXY_ADDR)
+# TLS verification is skipped ONLY for STACK=local against the self-signed loopback proxy
+# (same rule as deploy/scripts/_common.sh, which exports TSH_INSECURE_FLAG for the scripts).
+TSH_INSECURE_FLAG :=
+PROXY_MISMATCH    :=
+ifneq (,$(findstring .127.0.0.1.nip.io,$(PROXY_ADDR)))
+ifeq ($(STACK),local)
+TSH_INSECURE_FLAG := --insecure
+else
+PROXY_MISMATCH    := 1
+endif
+endif
+# CI_PREVIEW=1 lets `make preview` (and only preview) run a cloud stack against the kind context with the
+# file backend + throwaway passphrase, which is what .github/workflows/ci.yml does. deploy/up/down never skip it.
+ifeq ($(CI_PREVIEW),1)
+PREVIEW_GUARD :=
+else
+PREVIEW_GUARD := secrets-guard
+endif
+TSH             := $(REPO_ROOT)/bin/tsh $(TSH_INSECURE_FLAG) --proxy $(PROXY_ADDR)
 KUBECTL         := kubectl --context $(KUBE_CONTEXT)
 UI              := source $(SCRIPTS)/lib/ui.sh &&
 
@@ -70,27 +92,44 @@ deps: ## [Start here] Install npm + go dependencies
 	@$(UI) ui::spinner "npm install (workspaces)" npm install --no-fund --no-audit
 	@$(UI) ui::spinner "go mod download" bash -c 'cd services/teleport-access 2>/dev/null && go mod download || true'
 
+.PHONY: hooks
+hooks: ## [Start here] Install the pre-commit + pre-push git hooks (gitleaks, shellcheck, hadolint, golangci-lint, semgrep, ...)
+	@command -v pre-commit >/dev/null || { $(UI) ui::fail "pre-commit not installed: pipx install pre-commit  (or brew install pre-commit)"; exit 1; }
+	@pre-commit install --hook-type pre-commit --hook-type pre-push
+	@$(UI) ui::ok "hooks installed — run 'pre-commit run --all-files' once to warm the caches"
+
+.PHONY: secrets-guard
+secrets-guard: ## [Start here] Refuse non-local stacks that still use the file backend / default passphrase
+	@$(SCRIPTS)/secrets-guard.sh
+
+.PHONY: proxy-guard
+proxy-guard:
+	@test -z "$(PROXY_MISMATCH)" || { echo "PROXY_ADDR=$(PROXY_ADDR) is the loopback kind proxy but STACK=$(STACK) is not local: set STACK=local or PROXY_ADDR=<real proxy host:port>"; exit 1; }
+
 # ---------------------------------------------------------------------------- lifecycle
 .PHONY: kind-up
 kind-up: ## [Lifecycle] Create the kind cluster (idempotent)
 	@$(SCRIPTS)/kind-up.sh
 
 .PHONY: images
-images: ## [Lifecycle] Build service images and load them into kind (or push for cloud)
+images: secrets-guard ## [Lifecycle] Build service images and load them into kind (or push for cloud; prints images.digests)
 	@$(SCRIPTS)/load-images.sh $(IMAGE_TAG)
 
 .PHONY: stack-init
-stack-init: ## [Lifecycle] Select/create the Pulumi stack on the local file backend
+stack-init: secrets-guard stack-select ## [Lifecycle] Select/create the Pulumi stack (local: file backend + passphrase; cloud: see make secrets-guard)
+
+.PHONY: stack-select
+stack-select:
 	@$(UI) ui::step "Pulumi backend $(PULUMI_BACKEND_URL)"
-	@mkdir -p $(INFRA)/../.state
+	@if [[ "$(PULUMI_BACKEND_URL)" == file://* ]]; then mkdir -p $(INFRA)/../.state; fi
 	@$(PULUMI) login $(PULUMI_BACKEND_URL) >/dev/null
-	@($(PULUMI) stack select $(STACK) 2>/dev/null) || ($(PULUMI) stack init $(STACK) --secrets-provider passphrase)
+	@($(PULUMI) stack select $(STACK) 2>/dev/null) || ($(PULUMI) stack init $(STACK) --secrets-provider $(or $(PULUMI_SECRETS_PROVIDER),passphrase))
 	@$(UI) ui::ok "stack $(STACK) selected"
 
 .PHONY: preview
-preview: stack-init ## [Lifecycle] pulumi preview for STACK (cloud stacks render against kind: make preview STACK=dev-eks)
+preview: $(PREVIEW_GUARD) stack-select ## [Lifecycle] pulumi preview for STACK (cloud stacks render against kind: CI_PREVIEW=1 make preview STACK=dev-eks)
 	@$(UI) ui::section "pulumi preview ($(STACK))"
-	@$(PULUMI) preview --stack $(STACK) --diff $(PULUMI_ARGS)
+	@export TELEPORT_ALLOW_KIND_CONTEXT=1; $(PULUMI) preview --stack $(STACK) --diff $(PULUMI_ARGS)
 
 .PHONY: deploy
 deploy: stack-init ## [Lifecycle] pulumi up only (no kind/images)
@@ -128,7 +167,7 @@ summary: ## [Lifecycle] Print the post-deploy summary box
 	  "Tear down   make down"
 
 .PHONY: down
-down: ## [Lifecycle] pulumi destroy + delete the kind cluster
+down: secrets-guard ## [Lifecycle] pulumi destroy + delete the kind cluster
 	@$(UI) ui::section "Tearing down $(STACK)"
 	@-$(PULUMI) login $(PULUMI_BACKEND_URL) >/dev/null 2>&1 && $(PULUMI) destroy --stack $(STACK) --yes --skip-preview
 	@-$(UI) ui::spinner "Deleting kind cluster $(KIND_CLUSTER)" kind delete cluster --name $(KIND_CLUSTER)
@@ -144,11 +183,11 @@ bootstrap-admin: ## [Access] Print a reset link to set the local admin password 
 	@$(SCRIPTS)/bootstrap-admin.sh admin
 
 .PHONY: login
-login: ## [Access] tsh login via GitHub SSO (opens the browser)
+login: proxy-guard ## [Access] tsh login via GitHub SSO (opens the browser)
 	@$(TSH) login --auth github && $(TSH) status
 
 .PHONY: login-local
-login-local: ## [Access] tsh login as a local user (USER=admin)
+login-local: proxy-guard ## [Access] tsh login as a local user (USER_NAME=admin; lock it again afterwards: make tctl ARGS="lock --user=admin --message=break-glass")
 	@$(TSH) login --auth local --user $(or $(USER_NAME),admin) && $(TSH) status
 
 .PHONY: github-sso
@@ -160,14 +199,14 @@ requests: ## [Access] List access requests
 	@$(SCRIPTS)/requests.sh
 
 .PHONY: approve
-approve: ## [Access] Approve a request: make approve ID=<id> [REASON=...]
+approve: ## [Access] Approve a request (operator break-glass via tctl in the auth pod): make approve ID=<id> [REASON=...]
 	@test -n "$(ID)" || { echo "usage: make approve ID=<request-id> [REASON=...]"; exit 1; }
-	@$(SCRIPTS)/tctl.sh request approve --reason="$(or $(REASON),approved via make)" $(ID) && $(UI) ui::ok "approved $(ID)"
+	@$(SCRIPTS)/tctl.sh request approve --reason="$(or $(REASON),approved via make)" $(ID); $(UI) ui::ok "approved $(ID)"
 
 .PHONY: deny
-deny: ## [Access] Deny a request: make deny ID=<id> REASON=...
+deny: ## [Access] Deny a request (operator break-glass via tctl in the auth pod): make deny ID=<id> REASON=...
 	@test -n "$(ID)" || { echo "usage: make deny ID=<request-id> REASON=..."; exit 1; }
-	@$(SCRIPTS)/tctl.sh request deny --reason="$(or $(REASON),denied via make)" $(ID) && $(UI) ui::ok "denied $(ID)"
+	@$(SCRIPTS)/tctl.sh request deny --reason="$(or $(REASON),denied via make)" $(ID); $(UI) ui::ok "denied $(ID)"
 
 .PHONY: agent-cli
 agent-cli: ## [Access] Chat with the access agent in your terminal (AS=alice; AUTH=api-key|subscription, default: your Claude login)
@@ -235,13 +274,19 @@ test-e2e: ## [Test] tsh end-to-end scenarios
 test: test-unit test-integration test-e2e ## [Test] Everything
 
 .PHONY: lint
-lint: ## [Test] typecheck + eslint + go vet + gitleaks + kubeconform (rendered CRs)
+lint: ## [Test] typecheck + eslint + go vet + gitleaks + pre-commit (if installed) + kubeconform (rendered CRs)
 	@$(UI) ui::section "Lint"
 	@npm run typecheck --workspaces --if-present
 	@npm run lint --workspaces --if-present
-	@cd services/teleport-access 2>/dev/null && go vet ./... || true
-	@command -v gitleaks >/dev/null && gitleaks detect --no-banner --redact || $(UI) ui::warn "gitleaks not installed, skipped"
+	@if [ -d services/teleport-access ]; then go -C services/teleport-access vet ./...; fi
+	@if command -v gitleaks >/dev/null; then gitleaks detect --no-banner --redact; else $(UI) ui::warn "gitleaks not installed, skipped"; fi
+	@if command -v pre-commit >/dev/null; then pre-commit run --all-files; else $(UI) ui::warn "pre-commit not installed, skipped (pipx install pre-commit; make hooks)"; fi
 	@$(MAKE) --no-print-directory render
+
+.PHONY: repo-security
+repo-security: ## [Test] Apply GitHub repo security settings via gh api: make repo-security REPO=owner/name
+	@test -n "$(REPO)" || { echo "usage: make repo-security REPO=owner/name"; exit 1; }
+	@$(SCRIPTS)/repo-security.sh "$(REPO)"
 
 .PHONY: render
 render: ## [Test] Render Teleport CRs offline (mocks) and validate them with kubeconform

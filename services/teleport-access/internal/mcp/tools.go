@@ -2,10 +2,13 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/gravitational/teleport/api/client/proto"
@@ -88,9 +91,9 @@ func (s *Server) registerTools() {
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, any, error) {
 			return s.withPrincipal(ctx, func(p Principal) (any, error) { return s.listRequestable(ctx, p) })
 		})
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "search_resources", Description: "Find servers, databases, Kubernetes clusters and apps by name or label, regardless of the user's access." + untrusted, Annotations: ro()},
+	mcp.AddTool(s.mcp, &mcp.Tool{Name: "search_resources", Description: "Find servers, databases, Kubernetes clusters and apps by name or label. Results are limited to resources the current user holds or may request a role for (approvers see everything)." + untrusted, Annotations: ro()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in SearchIn) (*mcp.CallToolResult, any, error) {
-			return s.wrap(func() (any, error) { return s.search(ctx, in) })
+			return s.withPrincipal(ctx, func(p Principal) (any, error) { return s.search(ctx, p, in) })
 		})
 	mcp.AddTool(s.mcp, &mcp.Tool{Name: "list_accessible_resources", Description: "Resources the current user can reach right now (computed from their roles' label selectors and active elevated roles). Marked approximate." + untrusted, Annotations: ro()},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in AccessibleIn) (*mcp.CallToolResult, any, error) {
@@ -135,7 +138,7 @@ func (s *Server) registerTools() {
 }
 
 func ro() *mcp.ToolAnnotations { return &mcp.ToolAnnotations{ReadOnlyHint: true} }
-func ptr[T any](v T) *T   { return &v }
+func ptr[T any](v T) *T        { return &v }
 
 func approvalModel(edition string) string {
 	if edition == "enterprise" {
@@ -162,6 +165,8 @@ func (s *Server) wrap(fn func() (any, error)) (*mcp.CallToolResult, any, error) 
 	return r, nil, err
 }
 
+// userFacing maps errors to messages safe to show the model/user. Only well-typed Teleport errors
+// carry their message; everything else is generic (details are logged by wrap).
 func userFacing(err error) string {
 	switch {
 	case trace.IsAccessDenied(err):
@@ -170,8 +175,12 @@ func userFacing(err error) string {
 		return "not found: " + trace.UserMessage(err)
 	case trace.IsBadParameter(err):
 		return "invalid request: " + trace.UserMessage(err)
+	case trace.IsLimitExceeded(err):
+		return "rate limited: " + trace.UserMessage(err)
+	case errors.Is(err, ErrNoPrincipal):
+		return err.Error()
 	}
-	return err.Error()
+	return "teleport error"
 }
 
 // ---- implementations
@@ -288,6 +297,9 @@ func isHidden(name string) bool {
 }
 
 func (s *Server) describeRole(ctx context.Context, name string) (any, error) {
+	if isHidden(name) {
+		return nil, trace.NotFound("role %q not found", name)
+	}
 	r, err := s.deps.API.GetRole(ctx, name)
 	if err != nil {
 		return nil, err
@@ -346,10 +358,17 @@ func (s *Server) listRequestable(ctx context.Context, p Principal) (any, error) 
 	return map[string]any{"requestable_roles": out, "suggested_reviewers": caps.SuggestedReviewers, "require_reason": caps.RequireReason}, nil
 }
 
-func (s *Server) search(ctx context.Context, in SearchIn) (any, error) {
+// search lists resources by keyword. Non-approvers only see resources that some role they hold,
+// hold through an active request, or may request would grant (label selectors, ignoring logins),
+// so the inventory is scoped to what the user could legitimately reach; approvers see everything
+// because they review requests for any resource.
+func (s *Server) search(ctx context.Context, p Principal, in SearchIn) (any, error) {
 	limit := in.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 50
+	}
+	if utf8.RuneCountInString(in.Query) > 256 {
+		return nil, trace.BadParameter("query too long")
 	}
 	req := &proto.ListUnifiedResourcesRequest{SearchKeywords: strings.Fields(in.Query), Limit: int32(limit), SortBy: types.SortBy{Field: "name"}}
 	if in.Kind != "" {
@@ -359,7 +378,54 @@ func (s *Server) search(ctx context.Context, in SearchIn) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"resources": teleport.FlattenResources(resp)}, nil
+	all := teleport.FlattenResources(resp)
+	if s.isApprover(ctx, p.TeleportUser) {
+		return map[string]any{"resources": all}, nil
+	}
+	roles, traits, err := s.reachableRoles(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := []teleport.Resource{}
+	for i := range all {
+		for _, r := range roles {
+			if g := access.GrantFor(r, &all[i], traits); g != nil && g.DeniedBy == "" {
+				out = append(out, all[i])
+				break
+			}
+		}
+	}
+	return map[string]any{"resources": out, "scoped": true, "note": "Only resources reachable through roles you hold or may request are listed."}, nil
+}
+
+// reachableRoles returns the role objects the user holds, holds through active requests, or may
+// request, plus their traits.
+func (s *Server) reachableRoles(ctx context.Context, p Principal) ([]types.Role, map[string][]string, error) {
+	u, err := s.deps.API.GetUser(ctx, p.TeleportUser, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	names := append([]string{}, u.GetRoles()...)
+	if active, err := access.ActiveElevatedRoles(ctx, s.deps.API, p.TeleportUser); err == nil {
+		for r := range active {
+			names = append(names, r)
+		}
+	}
+	if caps, err := s.deps.API.GetAccessCapabilities(ctx, types.AccessCapabilitiesRequest{User: p.TeleportUser, RequestableRoles: true}); err == nil && caps != nil {
+		names = append(names, caps.RequestableRoles...)
+	}
+	seen := map[string]bool{}
+	var roles []types.Role
+	for _, n := range names {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		if r, err := s.deps.API.GetRole(ctx, n); err == nil {
+			roles = append(roles, r)
+		}
+	}
+	return roles, u.GetTraits(), nil
 }
 
 func normalizeKind(k string) string {
@@ -578,20 +644,75 @@ func parseState(s string) types.RequestState {
 	return types.RequestState_NONE
 }
 
+// Limits on create_access_request inputs.
+const (
+	minReasonLen    = 8
+	maxReasonLen    = 512
+	maxRequestTTL   = 4 * time.Hour
+	defaultTTL      = 2 * time.Hour
+	maxRolesPerReq  = 20
+	maxResourcesReq = 20
+)
+
+// cleanReason strips control characters and trims whitespace.
+func cleanReason(s string) string {
+	var sb strings.Builder
+	for _, r := range s {
+		if unicode.IsControl(r) || r == utf8.RuneError {
+			if r == '\n' || r == '\t' {
+				sb.WriteRune(' ')
+			}
+			continue
+		}
+		sb.WriteRune(r)
+	}
+	return strings.TrimSpace(sb.String())
+}
+
 func (s *Server) createRequest(ctx context.Context, p Principal, in CreateRequestIn) (any, error) {
-	if strings.TrimSpace(in.Reason) == "" {
-		return nil, trace.BadParameter("a reason is required; ask the person why they need access")
+	if !s.limiters.allow(p.TeleportUser) {
+		return nil, trace.LimitExceeded("too many access requests created recently; try again later")
+	}
+	reason := cleanReason(in.Reason)
+	if n := utf8.RuneCountInString(reason); n < minReasonLen || n > maxReasonLen {
+		return nil, trace.BadParameter("a reason of %d-%d characters is required; ask the person why they need access", minReasonLen, maxReasonLen)
 	}
 	if len(in.Roles) == 0 && len(in.ResourceIDs) == 0 {
 		return nil, trace.BadParameter("at least one role (or resource id) is required")
 	}
-	ttl := 2 * time.Hour
+	if len(in.Roles) > maxRolesPerReq || len(in.ResourceIDs) > maxResourcesReq {
+		return nil, trace.BadParameter("too many roles or resources in one request")
+	}
+	// Every role must be requestable by this user per Teleport (not just per our policy).
+	caps, err := s.deps.API.GetAccessCapabilities(ctx, types.AccessCapabilitiesRequest{User: p.TeleportUser, RequestableRoles: true})
+	if err != nil {
+		return nil, err
+	}
+	roles := []string{}
+	for _, role := range in.Roles {
+		role = strings.TrimSpace(role)
+		if role == "" || contains(roles, role) {
+			continue
+		}
+		if caps == nil || !contains(caps.RequestableRoles, role) || isHidden(role) {
+			return nil, trace.BadParameter("role %q is not requestable by this user; use list_requestable_roles", role)
+		}
+		roles = append(roles, role)
+	}
+	if len(roles) == 0 && len(in.ResourceIDs) == 0 {
+		return nil, trace.BadParameter("at least one role is required")
+	}
+	ttl := defaultTTL
 	if in.TTL != "" {
 		d, err := time.ParseDuration(in.TTL)
 		if err != nil || d <= 0 {
 			return nil, trace.BadParameter("ttl must be a duration like 1h or 30m")
 		}
 		ttl = d
+	}
+	requestedTTL := ttl
+	if ttl > maxRequestTTL {
+		ttl = maxRequestTTL
 	}
 	var resources []types.ResourceAccessID
 	for _, raw := range in.ResourceIDs {
@@ -603,32 +724,44 @@ func (s *Server) createRequest(ctx context.Context, p Principal, in CreateReques
 			resources = append(resources, types.ResourceAccessID{Id: id})
 		}
 	}
-	req, err := types.NewAccessRequestWithResources(uuid.NewString(), p.TeleportUser, in.Roles, resources)
-	if err != nil {
-		return nil, err
-	}
-	req.SetRequestReason(in.Reason)
-	req.SetAccessExpiry(time.Now().Add(ttl))
-	req.SetMaxDuration(time.Now().Add(ttl))
-	req.SetDryRun(in.DryRun)
-	tsh := fmt.Sprintf("tsh request create --roles %s --max-duration %s --reason %q", strings.Join(in.Roles, ","), shortDur(ttl), in.Reason)
 	var prediction any
 	if s.deps.Policy != nil {
 		var traits map[string][]string
 		if u, err := s.deps.API.GetUser(ctx, p.TeleportUser, false); err == nil {
 			traits = u.GetTraits()
 		}
-		dec := s.deps.Policy.Evaluate(policy.EvalRequest{Requester: p.TeleportUser, Roles: in.Roles, Traits: traits, RequestedTTL: ttl})
-		prediction = map[string]any{"action": dec.Action, "rule": dec.Rule, "ttl_cap": dec.TTLCap.String(), "approvers": dec.Approvers.TeleportRoles}
+		dec := s.deps.Policy.Evaluate(policy.EvalRequest{Requester: p.TeleportUser, Roles: roles, Traits: traits, RequestedTTL: ttl})
+		if dec.TTLCap > 0 && dec.TTLCap < ttl {
+			ttl = dec.TTLCap
+		}
+		prediction = map[string]any{"action": dec.Action, "rule": dec.Rule, "reason": dec.Reason, "ttl_cap": dec.TTLCap.String(), "approvers": dec.Approvers.TeleportRoles}
+		if dec.Action == policy.ActionDeny && !in.DryRun {
+			return nil, trace.BadParameter("policy denies this request (%s); it was not created", dec.Reason)
+		}
 	}
+	req, err := types.NewAccessRequestWithResources(uuid.NewString(), p.TeleportUser, roles, resources)
+	if err != nil {
+		return nil, err
+	}
+	req.SetRequestReason(reason)
+	req.SetAccessExpiry(time.Now().Add(ttl))
+	req.SetMaxDuration(time.Now().Add(ttl))
+	req.SetDryRun(in.DryRun)
+	tsh := fmt.Sprintf("tsh request create --roles %s --max-duration %s --reason %q", strings.Join(roles, ","), shortDur(ttl), reason)
 	created, err := s.deps.API.CreateAccessRequestV2(ctx, req)
 	if err != nil {
 		// Fall back to telling the person how to do it themselves.
+		s.deps.Log.Warn("create access request failed", "user", p.TeleportUser, "roles", roles, "err", err)
 		return map[string]any{"created": false, "error": userFacing(err), "tsh_command": tsh, "prediction": prediction}, nil
 	}
-	s.deps.Log.Info("access request created", "request_id", created.GetName(), "user", p.TeleportUser, "roles", in.Roles, "dry_run", in.DryRun)
-	return map[string]any{"created": !in.DryRun, "dry_run": in.DryRun, "request": viewRequest(created), "prediction": prediction, "tsh_command": tsh,
-		"note": "The request is PENDING until the access broker or an approver decides. Check with get_access_request."}, nil
+	s.deps.Log.Info("access request created", "request_id", created.GetName(), "user", p.TeleportUser, "roles", roles, "ttl", ttl.String(), "dry_run", in.DryRun)
+	out := map[string]any{"created": !in.DryRun, "dry_run": in.DryRun, "request": viewRequest(created), "prediction": prediction, "tsh_command": tsh,
+		"note": "The request is PENDING until the access broker or an approver decides. Check with get_access_request."}
+	if ttl != requestedTTL {
+		out["ttl_clamped_from"] = requestedTTL.String()
+		out["ttl"] = ttl.String()
+	}
+	return out, nil
 }
 
 func shortDur(d time.Duration) string {

@@ -81,9 +81,7 @@ func ExpandTraits(selector map[string][]string, traits map[string][]string) (out
 				unresolved = append(unresolved, v)
 				continue
 			}
-			for _, tv := range traits[m[2]] {
-				out[k] = append(out[k], tv)
-			}
+			out[k] = append(out[k], traits[m[2]]...)
 		}
 		if len(out[k]) == 0 {
 			// keep the key so "must exist" semantics still apply, with no possible value

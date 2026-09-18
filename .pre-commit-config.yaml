@@ -1,0 +1,120 @@
+# Local guardrails, mirrored in CI (.github/workflows/ci.yml job `pre-commit` runs `pre-commit run --all-files`,
+# so a `git commit --no-verify` is still caught). Install with `make hooks`.
+#
+# pre-commit stage: fast checks (secrets, syntax, formatting, linters).
+# pre-push stage:   slower checks (semgrep with the registry packs, offline CR rendering + kubeconform).
+#
+# Revisions are pinned tags; bump them with `pre-commit autoupdate` (and keep .tool-versions in step).
+default_stages: [pre-commit]
+minimum_pre_commit_version: "4.0.0"
+exclude: ^(node_modules/|.*/node_modules/|infra/\.state/|tests/\.state/|tests/policy/(rendered|schemas)/|\.logs/|bin/|package-lock\.json$)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^(deploy/kind/|infra/teleport/Pulumi\..*\.yaml$)   # kind config and Pulumi stack files use custom tags/anchors
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning, -x]
+        files: ^(deploy/scripts/.*\.sh|tests/e2e/.*\.sh)$
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+        entry: ghcr.io/hadolint/hadolint:v2.15.1 hadolint   # pinned image (the upstream hook uses :latest)
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.13.2
+    hooks:
+      - id: golangci-lint-config-verify
+      # One invocation per Go module; the shared config lives at the repo root.
+      - id: golangci-lint-full
+        name: golangci-lint (services/teleport-access)
+        entry: bash -c 'cd services/teleport-access && exec golangci-lint run --config=../../.golangci.yml ./...'
+        files: ^services/teleport-access/
+      - id: golangci-lint-full
+        name: golangci-lint (tests/tools)
+        entry: bash -c 'cd tests/tools && exec golangci-lint run --config=../../.golangci.yml ./...'
+        files: ^tests/tools/
+      - id: golangci-lint-full
+        name: golangci-lint (tests/integration)
+        entry: bash -c 'cd tests/integration && exec golangci-lint run --config=../../.golangci.yml --build-tags=integration ./...'
+        files: ^tests/integration/
+
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.177.0
+    hooks:
+      - id: semgrep
+        name: semgrep (repo rules + registry packs)
+        stages: [pre-push]
+        args:
+          - --config=.semgrep.yml
+          - --config=p/golang
+          - --config=p/typescript
+          - --config=p/dockerfile
+          - --config=p/github-actions
+          - --config=p/kubernetes
+          - --error
+          - --quiet
+          - --metrics=off
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        language: system
+        types: [go]
+        entry: bash -c 'out="$(gofmt -l "$@")"; [ -z "$out" ] || { printf "gofmt needed:\n%s\n" "$out"; exit 1; }' --
+      - id: tsh-insecure-guard
+        name: no hard-coded tsh/tctl --insecure or curl -k outside the guarded variables
+        language: pygrep
+        entry: '(tsh|tctl)[^\n]*--insecure|curl[^\n]* -[a-zA-Z]*k[a-zA-Z]* '
+        types: [text]
+        # index.ts builds the login hint conditionally on profile.teleport.insecure (kind only).
+        exclude: ^(deploy/scripts/_common\.sh|tests/e2e/lib\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
+      - id: npm-typecheck
+        name: npm run typecheck (workspaces)
+        language: system
+        entry: npm run typecheck --workspaces --if-present
+        files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
+        pass_filenames: false
+      - id: npm-lint
+        name: npm run lint (workspaces)
+        language: system
+        entry: npm run lint --workspaces --if-present
+        files: ^(infra/teleport|services/access-agent)/.*\.(ts|json)$
+        pass_filenames: false
+      - id: make-render
+        name: make render (offline CRs + kubeconform)
+        language: system
+        entry: make --no-print-directory render
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

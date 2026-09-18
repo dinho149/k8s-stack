@@ -77,7 +77,7 @@ func (n *Notifier) Send(ctx context.Context, ev Event) error {
 		req.Header.Set("X-Broker-Signature", Sign(n.Secret, ts, body))
 		resp, err := n.client().Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode < 300 {
 				return nil
 			}

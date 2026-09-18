@@ -29,8 +29,8 @@ export interface App {
 }
 
 export function buildApp(cfg: Config, log: Logger, adapters: ChatAdapter[]): App {
-  const pool = new McpSessionPool(cfg.MCP_URL, cfg.MCP_SHARED_TOKEN, log);
-  const broker = new BrokerClient(cfg.BROKER_URL, cfg.BROKER_API_TOKEN);
+  const pool = new McpSessionPool(cfg.MCP_URL, cfg.MCP_SHARED_TOKEN, cfg.IDENTITY_SIGNING_KEY, log);
+  const broker = new BrokerClient(cfg.BROKER_URL, cfg.BROKER_API_TOKEN, cfg.IDENTITY_SIGNING_KEY);
   const backend: ClaudeBackend =
     cfg.CLAUDE_AUTH_MODE === "subscription"
       ? new ClaudeCodeBackend(cfg, cfg.SESSION_BACKEND === "file" ? new FileSessionIdStore(cfg.SESSION_FILE.replace(/\.json$/, "") + "-claude-sessions.json") : new MemorySessionIdStore(), log)
@@ -38,7 +38,7 @@ export function buildApp(cfg: Config, log: Logger, adapters: ChatAdapter[]): App
   const identity = new IdentityResolver(cfg, broker);
   const approvers = new ApproverCheck(cfg, broker);
   const map = new Map(adapters.map((a) => [a.name, a]));
-  const notifications = new NotificationService(map, broker, identity, log);
+  const notifications = new NotificationService(map, broker, identity, approvers, log);
   const webhook = new WebhookVerifier(cfg.BROKER_WEBHOOK_SECRET);
 
   const handleMessage = async (m: IncomingMessage, reply: Replier): Promise<void> => {

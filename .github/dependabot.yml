@@ -1,0 +1,69 @@
+# Weekly dependency refresh across every ecosystem in the repo. Minor/patch updates are grouped into one PR
+# per ecosystem; majors (and anything security-related) arrive individually. Docker updates also refresh
+# the @sha256 digests that pin every base image.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, github-actions]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, npm]
+  - package-ecosystem: npm
+    directory: /services/access-agent
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, npm]
+  - package-ecosystem: npm
+    directory: /infra/teleport
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, npm]
+
+  - package-ecosystem: gomod
+    directory: /services/teleport-access
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      gomod-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, go]
+  - package-ecosystem: gomod
+    directory: /tests/tools
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      gomod-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, go]
+  - package-ecosystem: gomod
+    directory: /tests/integration
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    groups:
+      gomod-minor-patch:
+        update-types: [minor, patch]
+    labels: [dependencies, go]
+
+  - package-ecosystem: docker
+    directory: /services/teleport-access
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /services/access-agent
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+  - package-ecosystem: docker
+    directory: /deploy/images/ssh-node
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]

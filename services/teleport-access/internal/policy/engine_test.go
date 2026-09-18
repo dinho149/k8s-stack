@@ -137,3 +137,110 @@ func TestGlobCompile(t *testing.T) {
 		}
 	}
 }
+
+func TestMixedTierRequestsAreNeverAutoApproved(t *testing.T) {
+	e := engine(t)
+	// A low-risk role paired with a role no auto rule covers falls to defaults.
+	d := e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "k8s-admin"}, RequestedTTL: time.Hour})
+	if d.Action != ActionRequireApproval {
+		t.Fatalf("[dev-ssh k8s-admin] must require approval, got %+v", d)
+	}
+	d = e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "prod-ssh"}, RequestedTTL: time.Hour})
+	if d.Action != ActionRequireApproval {
+		t.Fatalf("[dev-ssh prod-ssh] must require approval, got %+v", d)
+	}
+	// Deny still wins on any role.
+	d = e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "editor"}, RequestedTTL: time.Hour})
+	if d.Action != ActionDeny || d.Rule != "never" {
+		t.Fatalf("[dev-ssh editor] must be denied, got %+v", d)
+	}
+	// Two roles both covered by the same auto rule are still fine.
+	d = e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "dev-db"}, RequestedTTL: time.Hour})
+	if d.Action != ActionAutoApprove || d.Rule != "auto-low" {
+		t.Fatalf("[dev-ssh dev-db] should auto-approve, got %+v", d)
+	}
+	// No roles at all is never auto-approved without a resource rule.
+	d = e.Evaluate(EvalRequest{Roles: nil, RequestedTTL: time.Hour})
+	if d.Action == ActionAutoApprove {
+		t.Fatalf("empty role list must not auto-approve: %+v", d)
+	}
+	d = e.Evaluate(EvalRequest{Roles: []string{}, ResourceLabels: []map[string]string{{"env": "dev"}}})
+	if d.Action == ActionAutoApprove {
+		t.Fatalf("empty role list with unmatched resources must not auto-approve: %+v", d)
+	}
+}
+
+func TestPerRoleConfirmationDowngradesAutoApprove(t *testing.T) {
+	// A permissive rule that would match the pair, while a later rule makes one role alone
+	// require approval: the per-role confirmation must downgrade.
+	p, err := Parse([]byte(`
+kind: ApprovalPolicy
+defaults: {action: require_approval, max_ttl: 8h}
+rules:
+  - {name: pair, match: {roles: ["dev-*", "k8s-*"], user_traits: {team: [platform]}}, action: auto_approve}
+  - {name: k8s, match: {roles: ["k8s-*"]}, action: require_approval, ttl_cap: 1h}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine(p)
+	// Alone, k8s-admin hits "pair" first (team trait) and would be auto; with a different trait it does not.
+	d := e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "k8s-admin"}, Traits: map[string][]string{"team": {"platform"}}})
+	if d.Action != ActionAutoApprove {
+		t.Fatalf("both roles auto-approvable alone: %+v", d)
+	}
+	p2, _ := Parse([]byte(`
+kind: ApprovalPolicy
+defaults: {action: require_approval, max_ttl: 8h}
+rules:
+  - {name: k8s, match: {roles: ["k8s-*"], requested_ttl_max: 30m}, action: require_approval}
+  - {name: pair, match: {roles: ["dev-*", "k8s-*"]}, action: auto_approve}
+`))
+	e = NewEngine(p2)
+	d = e.Evaluate(EvalRequest{Roles: []string{"dev-ssh", "k8s-admin"}, RequestedTTL: 10 * time.Minute})
+	if d.Action != ActionRequireApproval || d.Rule != RuleMixedTier {
+		t.Fatalf("k8s-admin alone requires approval, pair must downgrade: %+v", d)
+	}
+}
+
+func TestAllowedRolesCatalog(t *testing.T) {
+	p, err := Parse([]byte(`
+kind: ApprovalPolicy
+defaults: {action: require_approval, max_ttl: 8h}
+allowed_roles: ["dev-*", "prod-ssh", "^k8s-(dev|prod)$"]
+rules:
+  - {name: auto, match: {roles: ["dev-*"]}, action: auto_approve}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine(p)
+	if d := e.Evaluate(EvalRequest{Roles: []string{"dev-ssh"}}); d.Action != ActionAutoApprove {
+		t.Fatalf("catalog role should pass: %+v", d)
+	}
+	for _, roles := range [][]string{{"editor"}, {"dev-ssh", "access"}, {"k8s-admin"}, {"prod-ssh-2"}} {
+		d := e.Evaluate(EvalRequest{Roles: roles})
+		if d.Action != ActionDeny || d.Rule != RuleNotInCatalog {
+			t.Fatalf("%v should be denied as not-in-catalog: %+v", roles, d)
+		}
+	}
+	if d := e.Evaluate(EvalRequest{Roles: []string{"k8s-dev"}}); d.Action != ActionRequireApproval || d.Rule != "" {
+		t.Fatalf("regex catalog entry should pass to defaults: %+v", d)
+	}
+}
+
+func TestValidationRejectsUnsafePolicies(t *testing.T) {
+	bad := map[string]string{
+		"defaults auto_approve": "kind: ApprovalPolicy\ndefaults: {action: auto_approve, max_ttl: 1h}\nrules: []",
+		"unanchored regex":      "kind: ApprovalPolicy\ndefaults: {action: deny, max_ttl: 1h}\nrules: [{name: a, action: deny, match: {roles: ['^admin-']}}]",
+		"unanchored allowed":    "kind: ApprovalPolicy\ndefaults: {action: deny, max_ttl: 1h}\nallowed_roles: ['^dev']\nrules: []",
+	}
+	for name, b := range bad {
+		if _, err := Parse([]byte(b)); err == nil {
+			t.Errorf("%s should fail validation", name)
+		}
+	}
+	if _, err := compileMatcher("^admin-"); err == nil {
+		t.Fatal("unanchored ^ pattern must not compile")
+	}
+}

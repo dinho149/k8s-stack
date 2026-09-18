@@ -18,7 +18,10 @@ type Policy struct {
 	APIVersion string   `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string   `json:"kind" yaml:"kind"`
 	Defaults   Defaults `json:"defaults" yaml:"defaults"`
-	Rules      []Rule   `json:"rules" yaml:"rules"`
+	// AllowedRoles: when non-empty, every requested role must match one of these globs/anchored
+	// regexes or the request is denied before any rule runs (rendered from the role catalog).
+	AllowedRoles []string `json:"allowed_roles,omitempty" yaml:"allowed_roles,omitempty"`
+	Rules        []Rule   `json:"rules" yaml:"rules"`
 }
 
 // Defaults apply when no rule matches or a rule omits a field.
@@ -43,7 +46,8 @@ type Rule struct {
 
 // Match describes which requests a rule applies to. Empty clauses are ignored.
 type Match struct {
-	// Roles: globs ("dev-*") or anchored regexes ("^admin-.*$"); any requested role matching counts.
+	// Roles: globs ("dev-*") or anchored regexes ("^admin-.*$"). For deny rules any requested role
+	// matching counts; for every other action all requested roles must match.
 	Roles []string `json:"roles,omitempty" yaml:"roles,omitempty"`
 	// ResourceLabels: every requested resource must carry a matching label (value list, "*" allowed).
 	ResourceLabels map[string][]string `json:"resource_labels,omitempty" yaml:"resource_labels,omitempty"`

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gravitational/teleport/api/client/proto"
@@ -41,7 +42,13 @@ type Service struct {
 	SelfUser string
 	// FallbackApproverRoles is used when a decision names no approver roles.
 	FallbackApproverRoles []string
+
+	notifyOnce sync.Once
+	notifySem  chan struct{}
 }
+
+// maxConcurrentNotifications bounds webhook fan-out (each delivery retries with backoff).
+const maxConcurrentNotifications = 8
 
 // Approver identifies the human who clicked approve/deny.
 type Approver struct {
@@ -132,7 +139,29 @@ func (s *Service) Handle(ctx context.Context, r types.AccessRequest) error {
 	if rec, ok := s.Store.Get(id); ok && (!rec.NotifiedAt.IsZero() || !rec.ResolvedAt.IsZero()) {
 		return nil // already handled
 	}
-	dec := s.decide(ctx, r)
+	ev := s.evalRequest(ctx, r)
+	dec := s.Policy.Evaluate(ev)
+	if dec.Action == policy.ActionAutoApprove {
+		// Belt and braces on top of the engine's own per-role confirmation: every role alone must be
+		// auto-approvable, and a request with no roles never is.
+		if len(ev.Roles) == 0 {
+			s.Log.Warn("downgrading auto-approve: request has no roles", "request_id", id)
+			dec.Action, dec.Rule, dec.Reason = policy.ActionRequireApproval, policy.RuleMixedTier, "requests without roles are not auto-approvable"
+		}
+		for _, role := range ev.Roles {
+			single := ev
+			single.Roles = []string{role}
+			if sd := s.Policy.Evaluate(single); sd.Action != policy.ActionAutoApprove {
+				s.Log.Warn("downgrading auto-approve: role alone is not auto-approvable", "request_id", id, "role", role, "single_action", sd.Action, "single_rule", sd.Rule)
+				dec.Action, dec.Rule = policy.ActionRequireApproval, policy.RuleMixedTier
+				dec.Reason = fmt.Sprintf("role %q alone is not auto-approvable (%s)", role, sd.Reason)
+				if sd.Action == policy.ActionDeny {
+					dec.Action, dec.Rule, dec.Reason = policy.ActionDeny, sd.Rule, sd.Reason
+					break
+				}
+			}
+		}
+	}
 	rec := &Record{ID: id, User: r.GetUser(), Roles: r.GetRoles(), Decision: dec, SeenAt: time.Now()}
 	s.Log.Info("broker decision", "request_id", id, "user", r.GetUser(), "roles", r.GetRoles(), "rule", dec.Rule, "action", dec.Action, "reason", dec.Reason)
 
@@ -144,7 +173,7 @@ func (s *Service) Handle(ctx context.Context, r types.AccessRequest) error {
 
 	switch dec.Action {
 	case policy.ActionAutoApprove:
-		err := s.resolve(ctx, r, types.RequestState_APPROVED, dec.Reason, map[string][]string{"access-broker/rule": {dec.Rule}, "access-broker/mode": {"auto"}}, s.SelfUser, dec.TTLCap)
+		err := s.resolve(ctx, r, types.RequestState_APPROVED, dec.Reason, map[string][]string{"access-broker/rule": {dec.Rule}, "access-broker/mode": {"auto"}}, s.SelfUser)
 		if err != nil {
 			return fmt.Errorf("auto-approve %s: %w", id, err)
 		}
@@ -153,7 +182,7 @@ func (s *Service) Handle(ctx context.Context, r types.AccessRequest) error {
 		s.Store.Put(rec)
 		s.notify(ctx, r, rec, "request.resolved")
 	case policy.ActionDeny:
-		err := s.resolve(ctx, r, types.RequestState_DENIED, dec.Reason, map[string][]string{"access-broker/rule": {dec.Rule}, "access-broker/mode": {"auto"}}, s.SelfUser, 0)
+		err := s.resolve(ctx, r, types.RequestState_DENIED, dec.Reason, map[string][]string{"access-broker/rule": {dec.Rule}, "access-broker/mode": {"auto"}}, s.SelfUser)
 		if err != nil {
 			return fmt.Errorf("auto-deny %s: %w", id, err)
 		}
@@ -190,7 +219,8 @@ func (s *Service) handleResolved(ctx context.Context, r types.AccessRequest) err
 	return nil
 }
 
-func (s *Service) decide(ctx context.Context, r types.AccessRequest) policy.Decision {
+// evalRequest builds the policy input for r (traits, resource labels, requested TTL).
+func (s *Service) evalRequest(ctx context.Context, r types.AccessRequest) policy.EvalRequest {
 	var traits map[string][]string
 	if u, err := s.API.GetUser(ctx, r.GetUser(), false); err == nil {
 		traits = u.GetTraits()
@@ -222,11 +252,16 @@ func (s *Service) decide(ctx context.Context, r types.AccessRequest) policy.Deci
 	if md := r.GetMaxDuration(); !md.IsZero() && md.Before(r.GetAccessExpiry()) {
 		ttl = time.Until(md)
 	}
-	return s.Policy.Evaluate(policy.EvalRequest{Requester: r.GetUser(), Roles: r.GetRoles(), ResourceLabels: labels, Traits: traits, RequestedTTL: ttl.Round(time.Minute)})
+	return policy.EvalRequest{Requester: r.GetUser(), Roles: r.GetRoles(), ResourceLabels: labels, Traits: traits, RequestedTTL: ttl.Round(time.Minute)}
 }
 
 // resolve applies the decision to Teleport.
-func (s *Service) resolve(ctx context.Context, r types.AccessRequest, state types.RequestState, reason string, ann map[string][]string, author string, ttlCap time.Duration) error {
+//
+// The TTL of an approved request is not adjusted here: types.AccessRequestUpdate has no expiry
+// field. TTL is bounded by the policy's requested_ttl_max matching (a request asking for longer
+// simply does not match the auto-approve rule) together with Teleport's own request.max_duration
+// and role max_session_ttl.
+func (s *Service) resolve(ctx context.Context, r types.AccessRequest, state types.RequestState, reason string, ann map[string][]string, author string) error {
 	switch s.Mode {
 	case ModeReview:
 		_, err := s.API.SubmitAccessReview(ctx, types.AccessReviewSubmission{RequestID: r.GetName(), Review: types.AccessReview{Author: author, ProposedState: state, Reason: reason, Created: time.Now(), Annotations: ann}})
@@ -276,7 +311,7 @@ func (s *Service) humanDecision(ctx context.Context, id string, by Approver, rea
 	if rec, ok := s.Store.Get(id); ok {
 		ann["access-broker/rule"] = []string{rec.Decision.Rule}
 	}
-	if err := s.resolve(ctx, r, state, full, ann, by.TeleportUser, 0); err != nil {
+	if err := s.resolve(ctx, r, state, full, ann, by.TeleportUser); err != nil {
 		return r, err
 	}
 	rec, ok := s.Store.Get(id)
@@ -295,13 +330,36 @@ func (s *Service) humanDecision(ctx context.Context, id string, by Approver, rea
 	return updated, nil
 }
 
+// authorizeApprover decides whether by may decide r. The approver identity comes from a verified
+// assertion; it is still cross-checked against Teleport: the user must exist, must not be the
+// requester (by name or by email trait, case-insensitively), and must hold an approver role or be
+// listed by an email that is one of their own Teleport email traits.
 func (s *Service) authorizeApprover(ctx context.Context, r types.AccessRequest, by Approver) error {
-	if by.TeleportUser == "" || by.TeleportUser == r.GetUser() {
+	if by.TeleportUser == "" {
+		return ErrNotApprover
+	}
+	if strings.EqualFold(by.TeleportUser, r.GetUser()) {
 		return ErrSelfApproval
 	}
 	u, err := s.API.GetUser(ctx, by.TeleportUser, false)
 	if err != nil {
 		return ErrNotApprover
+	}
+	ownEmails := u.GetTraits()["email"]
+	if requester, err := s.API.GetUser(ctx, r.GetUser(), false); err == nil {
+		for _, re := range requester.GetTraits()["email"] {
+			if re == "" {
+				continue
+			}
+			if by.Email != "" && strings.EqualFold(re, by.Email) {
+				return ErrSelfApproval
+			}
+			for _, oe := range ownEmails {
+				if strings.EqualFold(re, oe) {
+					return ErrSelfApproval
+				}
+			}
+		}
 	}
 	rec, _ := s.Store.Get(r.GetName())
 	var allowedRoles, allowedEmails []string
@@ -311,9 +369,12 @@ func (s *Service) authorizeApprover(ctx context.Context, r types.AccessRequest, 
 	if len(allowedRoles) == 0 {
 		allowedRoles = s.FallbackApproverRoles
 	}
-	for _, e := range allowedEmails {
-		if by.Email != "" && strings.EqualFold(e, by.Email) {
-			return nil
+	// Email allow-list: only when the asserted email is one of the approver's own Teleport traits.
+	if by.Email != "" && containsFold(ownEmails, by.Email) {
+		for _, e := range allowedEmails {
+			if strings.EqualFold(e, by.Email) {
+				return nil
+			}
 		}
 	}
 	for _, have := range u.GetRoles() {
@@ -330,6 +391,15 @@ func (s *Service) authorizeApprover(ctx context.Context, r types.AccessRequest, 
 		}
 	}
 	return ErrNotApprover
+}
+
+func containsFold(xs []string, x string) bool {
+	for _, v := range xs {
+		if strings.EqualFold(v, x) {
+			return true
+		}
+	}
+	return false
 }
 
 func coversAll(reviewable, wanted []string) bool {
@@ -424,8 +494,11 @@ func (s *Service) notify(ctx context.Context, r types.AccessRequest, rec *Record
 			ev.ApproverEmails = append(ev.ApproverEmails, s.approverEmails(ctx, rec.Decision.Approvers.TeleportRoles)...)
 		}
 	}
+	s.notifyOnce.Do(func() { s.notifySem = make(chan struct{}, maxConcurrentNotifications) })
 	go func() {
-		bg, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		s.notifySem <- struct{}{}
+		defer func() { <-s.notifySem }()
+		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 		defer cancel()
 		if err := s.Notifier.Send(bg, ev); err != nil {
 			s.Log.Error("notify agent", "request_id", r.GetName(), "type", typ, "err", err)

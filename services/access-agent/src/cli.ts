@@ -2,6 +2,9 @@
  * Terminal REPL: `npm run cli -- --as alice [--email alice@example.com] [--script file]`
  * Talks to the real MCP server and broker (port-forwarded locally) and also receives broker webhooks
  * on PORT so approval cards show up in the terminal.
+ *
+ * Needs MCP_SHARED_TOKEN and IDENTITY_SIGNING_KEY (same values the cluster uses): every MCP and broker
+ * call carries a signed assertion for `--as <user>` with platform "cli".
  */
 import * as fs from "node:fs";
 import { loadConfig } from "./config/schema.js";

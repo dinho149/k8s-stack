@@ -49,9 +49,26 @@ export const TeleportAccessList = cr("TeleportAccessList", "v1");
 
 /** Teleport role spec (v7) — only the fields this project uses. */
 export interface RoleSpecV7 {
-  options?: Record<string, unknown>;
+  options?: RoleOptions;
   allow?: RoleConditions;
   deny?: RoleConditions;
+}
+/** Role options this project sets (all verified against the TeleportRoleV7 CRD schema). */
+export interface RoleOptions {
+  max_session_ttl?: string;
+  /** int-or-string in the CRD (never a YAML boolean): "yes" = per-session MFA, "hardware_key*" variants, "no" */
+  require_session_mfa?: "yes" | "no" | "hardware_key" | "hardware_key_touch" | "hardware_key_pin" | "hardware_key_touch_and_pin";
+  disconnect_expired_cert?: boolean;
+  client_idle_timeout?: string;
+  lock?: "strict" | "best_effort";
+  pin_source_ip?: boolean;
+  ssh_file_copy?: boolean;
+  ssh_port_forwarding?: { local?: { enabled: boolean }; remote?: { enabled: boolean } };
+  forward_agent?: boolean;
+  create_host_user_mode?: "off" | "keep" | "insecure-drop";
+  enhanced_recording?: string[];
+  record_session?: { default?: string; ssh?: string; desktop?: boolean };
+  [k: string]: unknown;
 }
 export interface RoleConditions {
   logins?: string[];
@@ -69,6 +86,7 @@ export interface RoleConditions {
     roles?: string[];
     search_as_roles?: string[];
     max_duration?: string;
+    reason?: { mode: "required" | "optional" };
     suggested_reviewers?: string[];
     thresholds?: Array<{ name?: string; approve?: number; deny?: number; filter?: string }>;
   };

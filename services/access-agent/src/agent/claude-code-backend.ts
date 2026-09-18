@@ -4,10 +4,13 @@
  * operator's own Claude Code login.
  *
  * Security properties kept from the api-key path:
- *  - identity is bound to HTTP headers in a per-user MCP config file written by THIS process (0600, deleted
- *    after the turn, never on argv); the model cannot change who it acts as;
+ *  - identity is bound by THIS process: the child talks to a per-turn loopback proxy (assertion-proxy.ts)
+ *    that mints a fresh signed assertion for the turn's principal on every request; the child only
+ *    ever holds a single-use proxy token, written to a 0600 MCP config file (never on argv);
  *  - only our MCP tools exist (`--tools ""` removes every built-in tool, `--strict-mcp-config` ignores any
- *    other MCP server), and they are pre-approved, so print mode never prompts;
+ *    other MCP server, `--setting-sources ""` ignores user/project/local settings), and they are
+ *    pre-approved, so print mode never prompts;
+ *  - the child environment is an explicit allow-list, so no unrelated credential reaches the model;
  *  - there are no approve/deny tools to reach.
  */
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
@@ -16,6 +19,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Config } from "../config/schema.js";
+import { startAssertionProxy, type AssertionProxy } from "../mcp/assertion-proxy.js";
 import type { Logger } from "../observability/logger.js";
 import type { ClaudeBackend, ProbeResult, TurnInput, TurnResult } from "./backend.js";
 import type { SessionIdStore } from "./session-ids.js";
@@ -25,9 +29,19 @@ import { StreamJsonParser, looksLikeAuthFailure } from "./stream-json.js";
 export type SpawnFn = typeof nodeSpawn;
 
 export const MCP_SERVER_NAME = "teleport";
-const NESTED_SESSION_VARS = ["CLAUDE_SESSION_ID", "CLAUDE_PARENT_SESSION_ID", "CLAUDECODE"];
-/** Would outrank the subscription token in Claude Code's credential precedence. */
-const API_CREDENTIAL_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"];
+
+/** Exact variable names the child may inherit. */
+export const ENV_ALLOW_EXACT = new Set([
+  "PATH", "HOME", "USER", "LOGNAME", "SHELL",
+  "TMPDIR", "TMP", "TEMP",
+  "LANG", "LANGUAGE", "TERM", "COLORTERM", "TZ",
+  "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+  "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+]);
+/** Prefixes the child may inherit (minus the explicit exclusions below). */
+export const ENV_ALLOW_PREFIX = ["LC_", "CLAUDE_"];
+/** Never inherited even though they match a prefix: nested-session markers and the credential we set ourselves. */
+export const ENV_DENY = new Set(["CLAUDE_SESSION_ID", "CLAUDE_PARENT_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"]);
 
 export interface ClaudeCodeBackendOptions {
   spawn?: SpawnFn;
@@ -53,15 +67,14 @@ export class ClaudeCodeBackend implements ClaudeBackend {
     this.tmpDir = opts.tmpDir ?? os.tmpdir();
   }
 
-  /** Environment for the child: explicit, with API credentials and nested-session markers removed. */
+  /** Environment for the child: an explicit allow-list plus the one credential this mode needs. */
   buildEnv(): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {};
     for (const [k, v] of Object.entries(this.baseEnv)) {
-      if (v === undefined || NESTED_SESSION_VARS.includes(k) || API_CREDENTIAL_VARS.includes(k)) continue;
-      env[k] = v;
+      if (v === undefined || ENV_DENY.has(k)) continue;
+      if (ENV_ALLOW_EXACT.has(k) || ENV_ALLOW_PREFIX.some((p) => k.startsWith(p))) env[k] = v;
     }
     if (this.cfg.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = this.cfg.CLAUDE_CODE_OAUTH_TOKEN;
-    else delete env.CLAUDE_CODE_OAUTH_TOKEN;
     if (!this.cfg.CLAUDE_ALLOW_LOCAL_LOGIN) {
       // isolated state dir: nothing from the operator's own ~/.claude leaks in (settings, hooks, MCP servers)
       env.CLAUDE_CONFIG_DIR = this.cfg.CLAUDE_STATE_DIR;
@@ -80,6 +93,7 @@ export class ClaudeCodeBackend implements ClaudeBackend {
       "--output-format", "stream-json",
       "--verbose",
       "--include-partial-messages",
+      "--setting-sources", "",
       "--strict-mcp-config",
       "--mcp-config", mcpConfigPath,
       "--tools", "",
@@ -93,11 +107,10 @@ export class ClaudeCodeBackend implements ClaudeBackend {
     return args;
   }
 
-  private writeMcpConfig(input: TurnInput): string {
-    const headers: Record<string, string> = { Authorization: `Bearer ${this.cfg.MCP_SHARED_TOKEN}`, "X-Teleport-User": input.principal.teleportUser };
-    if (input.principal.email) headers["X-Teleport-User-Email"] = input.principal.email;
+  private writeMcpConfig(proxy: AssertionProxy): string {
+    const headers: Record<string, string> = { Authorization: `Bearer ${proxy.token}` };
     const file = path.join(this.tmpDir, `mcp-${randomUUID()}.json`);
-    fs.writeFileSync(file, JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: { type: "http", url: this.cfg.MCP_URL, headers } } }), { mode: 0o600 });
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: { type: "http", url: proxy.url, headers } } }), { mode: 0o600 });
     return file;
   }
 
@@ -115,7 +128,8 @@ export class ClaudeCodeBackend implements ClaudeBackend {
   }
 
   private async once(input: TurnInput, sessionId: string, resume: boolean): Promise<TurnResult & { resumeFailed?: boolean }> {
-    const mcpFile = this.writeMcpConfig(input);
+    const proxy = await startAssertionProxy({ upstream: this.cfg.MCP_URL, sharedToken: this.cfg.MCP_SHARED_TOKEN, signingKey: this.cfg.IDENTITY_SIGNING_KEY, principal: input.principal, log: this.log });
+    const mcpFile = this.writeMcpConfig(proxy);
     const prompt = `${perTurnContext({ teleportUser: input.principal.teleportUser, email: input.principal.email, platform: input.platform, isApprover: input.isApprover, nowIso: new Date().toISOString() })}\n\n${input.text}`;
     const args = this.buildArgs(mcpFile, sessionId, resume, STABLE_SYSTEM);
     const parser = new StreamJsonParser(input.onDelta);
@@ -144,6 +158,7 @@ export class ClaudeCodeBackend implements ClaudeBackend {
       return { text, stopReason: summary.stopReason ?? summary.subtype ?? null, sessionId: summary.sessionId, costUsd: summary.costUsd };
     } finally {
       fs.rm(mcpFile, { force: true }, () => undefined);
+      await proxy.close();
     }
   }
 
@@ -178,7 +193,7 @@ export class ClaudeCodeBackend implements ClaudeBackend {
   /** A one-turn, tool-less call; cheap but not free (~a few hundred tokens). Auth failures set `stale`. */
   async probe(): Promise<ProbeResult> {
     try {
-      const r = await this.once({ sessionKey: `probe-${randomUUID()}`, principal: { teleportUser: "probe", email: null }, platform: "probe", isApprover: false, text: "Reply with exactly: ok" }, randomUUID(), false);
+      const r = await this.once({ sessionKey: `probe-${randomUUID()}`, principal: { teleportUser: "probe", email: null, platform: "cli", platformUserId: "probe" }, platform: "probe", isApprover: false, text: "Reply with exactly: ok" }, randomUUID(), false);
       if (r.stopReason === "auth_error") return { ok: false, detail: "claude subscription login rejected" };
       return { ok: true, detail: `claude cli ok (${this.cfg.CLAUDE_CODE_OAUTH_TOKEN ? "setup-token" : "local login"}, model ${this.cfg.CLAUDE_MODEL})` };
     } catch (e) {

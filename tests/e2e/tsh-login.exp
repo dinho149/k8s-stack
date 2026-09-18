@@ -1,9 +1,12 @@
 #!/usr/bin/expect -f
 # Headless `tsh login --auth local` with password + TOTP. Inputs via environment:
-#   TSH_BIN PROXY_ADDR TSH_USER TSH_PASSWORD TSH_OTP  (TELEPORT_HOME is inherited)
+#   TSH_BIN PROXY_ADDR TSH_USER TSH_PASSWORD TSH_OTP TSH_INSECURE_FLAG  (TELEPORT_HOME is inherited)
+# TSH_INSECURE_FLAG is "--insecure" only for STACK=local against the loopback kind proxy (set by lib.sh).
 set timeout 60
 log_user 1
-spawn $env(TSH_BIN) --insecure --proxy $env(PROXY_ADDR) login --auth local --user $env(TSH_USER)
+set insecure {}
+if {[info exists env(TSH_INSECURE_FLAG)] && $env(TSH_INSECURE_FLAG) ne ""} { set insecure [list $env(TSH_INSECURE_FLAG)] }
+spawn $env(TSH_BIN) {*}$insecure --proxy $env(PROXY_ADDR) login --auth local --user $env(TSH_USER)
 expect {
   -re {(?i)password[^\n]*:} { send -- "$env(TSH_PASSWORD)\r" }
   timeout { puts "timeout waiting for password prompt"; exit 1 }

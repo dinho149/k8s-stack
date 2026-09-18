@@ -3,6 +3,7 @@ package policy
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -10,7 +11,7 @@ import (
 
 // Load reads and validates a policy file.
 func Load(path string) (*Policy, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(filepath.Clean(path)) //nolint:gosec // operator-configured policy path
 	if err != nil {
 		return nil, fmt.Errorf("read policy: %w", err)
 	}
@@ -37,6 +38,14 @@ func (p *Policy) Validate() error {
 	}
 	if !validAction(p.Defaults.Action) {
 		errs = append(errs, fmt.Sprintf("defaults.action %q invalid", p.Defaults.Action))
+	}
+	if p.Defaults.Action == ActionAutoApprove {
+		errs = append(errs, "defaults.action must not be auto_approve (unmatched requests must never be auto-approved)")
+	}
+	for _, g := range p.AllowedRoles {
+		if _, err := compileMatcher(g); err != nil {
+			errs = append(errs, fmt.Sprintf("allowed_roles: bad role matcher %q: %v", g, err))
+		}
 	}
 	if p.Defaults.MaxTTL <= 0 {
 		errs = append(errs, "defaults.max_ttl must be > 0")

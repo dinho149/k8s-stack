@@ -17,15 +17,17 @@ config:
     secondFactors: [otp]
     localAuth: true
   teleport:users:
+    # Break-glass identity for the local cluster only: role/user administration, no `access`
+    # (no SSH/db/kube), no `approver`, no logins trait. Lock it after use: tctl lock --user=admin
     - name: admin
-      roles: [editor, access, auditor]
-      traits:
-        logins: [root, dev]
+      roles: [editor, auditor]
     - name: alice
       roles: [requester]
       traits:
         team: [app]
         email: [alice@example.com]
+    # bob is the local approver (the broker routes high-risk requests to holders of `approver`).
+    # He still has no standing resource access: everything elevated goes through a request.
     - name: bob
       roles: [requester, approver]
       traits:

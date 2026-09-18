@@ -62,7 +62,13 @@ func main() {
 		if evalTTL != "" {
 			ttl, _ = time.ParseDuration(evalTTL)
 		}
-		dec := policy.NewEngine(p).Evaluate(policy.EvalRequest{Roles: strings.Split(evalRoles, ","), RequestedTTL: ttl})
+		var roles []string
+		for _, r := range strings.Split(evalRoles, ",") {
+			if r = strings.TrimSpace(r); r != "" {
+				roles = append(roles, r)
+			}
+		}
+		dec := policy.NewEngine(p).Evaluate(policy.EvalRequest{Roles: roles, RequestedTTL: ttl})
 		return json.NewEncoder(os.Stdout).Encode(dec)
 	}}
 	evalCmd.Flags().StringVar(&evalRoles, "roles", "", "comma separated roles")
@@ -71,8 +77,9 @@ func main() {
 	root.AddCommand(mcpCmd, brokerCmd, allCmd, policyCmd)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if err := root.ExecuteContext(ctx); err != nil && !errors.Is(err, context.Canceled) {
+	err := root.ExecuteContext(ctx)
+	stop()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -95,7 +102,7 @@ func run(ctx context.Context, modes, httpAddr string) error {
 	if err != nil {
 		return err
 	}
-	defer clt.Close()
+	defer func() { _ = clt.Close() }()
 
 	policyFile := cfg.Broker.PolicyFile
 	if !strings.Contains(modes, "broker") {
@@ -112,12 +119,17 @@ func run(ctx context.Context, modes, httpAddr string) error {
 		if engine == nil {
 			return fmt.Errorf("broker requires a policy file (%s)", policyFile)
 		}
+		store, err := broker.NewStore(cfg.Broker.StateFile)
+		if err != nil {
+			return fmt.Errorf("broker state: %w", err)
+		}
+		store.OnError = func(err error) { log.Error("broker state file write failed", "path", cfg.Broker.StateFile, "err", err) }
 		brokerSvc = &broker.Service{
-			API: clt, Policy: engine, Store: broker.NewStore(cfg.Broker.StateFile), Log: log.With("component", "broker"),
+			API: clt, Policy: engine, Store: store, Log: log.With("component", "broker"),
 			Mode: broker.ApprovalMode(cfg.Broker.Approvals), SelfUser: clt.Username(), FallbackApproverRoles: []string{"approver"},
 			Notifier: &broker.Notifier{URL: cfg.Broker.AgentWebhookURL, Secret: cfg.Broker.WebhookSecret, Log: log.With("component", "notifier")},
 		}
-		srv := &http.Server{Addr: cfg.Broker.HTTPAddr, Handler: brokerSvc.Handler(cfg.Broker.APIToken), ReadHeaderTimeout: 10 * time.Second}
+		srv := httpx.NewServer(cfg.Broker.HTTPAddr, brokerSvc.Handler(cfg.Broker.APIToken, []byte(cfg.IdentitySigningKey)))
 		go func() { errc <- serve(ctx, srv, log, "broker http") }()
 		if brokerSvc.Mode != broker.ModeNative {
 			go func() { errc <- brokerSvc.RunWatcher(ctx, cfg.Broker.Mode == "poll", cfg.Broker.PollInterval) }()
@@ -132,7 +144,7 @@ func run(ctx context.Context, modes, httpAddr string) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					brokerSvc.Store.Prune(7 * 24 * time.Hour)
+					brokerSvc.Store.Prune(7*24*time.Hour, 24*time.Hour)
 				}
 			}
 		}()
@@ -140,17 +152,22 @@ func run(ctx context.Context, modes, httpAddr string) error {
 
 	if strings.Contains(modes, "mcp") {
 		stdio := mcpserver.Principal{TeleportUser: cfg.MCP.StdioUser, Email: cfg.MCP.StdioEmail, Source: "stdio"}
-		if stdio.TeleportUser == "" && cfg.MCP.HTTPAddr == "" {
+		if cfg.MCP.HTTPAddr != "" {
+			// HTTP mode: identity comes only from verified assertions; no stdio principal exists.
+			stdio = mcpserver.Principal{}
+		} else if stdio.TeleportUser == "" {
 			// Local operator: act as the identity we are connected with (their own tsh profile).
 			stdio.TeleportUser = clt.Username()
 		}
 		srv := mcpserver.New(mcpserver.Deps{API: clt, Policy: engine, Log: log.With("component", "mcp"), Stdio: stdio, Edition: cfg.Teleport.Edition, ClusterName: clt.ClusterName(), Version: clt.ServerVersion(), ApproverRoles: []string{"approver"}})
 		if cfg.MCP.HTTPAddr != "" {
 			mux := http.NewServeMux()
-			httpx.Health(mux, func() error { _, err := clt.Ping(ctx); return err })
-			mux.Handle("/mcp", srv.HTTPHandler(cfg.MCP.SharedToken))
-			mux.Handle("/mcp/", srv.HTTPHandler(cfg.MCP.SharedToken))
-			hs := &http.Server{Addr: cfg.MCP.HTTPAddr, Handler: httpx.Logging(log.With("component", "mcp-http"), mux), ReadHeaderTimeout: 10 * time.Second}
+			httpx.Health(mux, func(ctx context.Context) error { _, err := clt.Ping(ctx); return err }, 5*time.Second)
+			// One handler (one session table, one replay cache) mounted at both paths.
+			h := srv.HTTPHandler(cfg.MCP.SharedToken, []byte(cfg.IdentitySigningKey))
+			mux.Handle("/mcp", h)
+			mux.Handle("/mcp/", h)
+			hs := httpx.NewServer(cfg.MCP.HTTPAddr, httpx.Logging(log.With("component", "mcp-http"), mux))
 			go func() { errc <- serve(ctx, hs, log, "mcp http") }()
 		} else {
 			go func() { errc <- srv.RunStdio(ctx) }()
@@ -171,7 +188,8 @@ func run(ctx context.Context, modes, httpAddr string) error {
 func serve(ctx context.Context, srv *http.Server, log *slog.Logger, name string) error {
 	go func() {
 		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Shutdown must outlive the cancelled parent context; keep its values but drop the cancel.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
@@ -199,7 +217,7 @@ func loadPolicy(ctx context.Context, path string, log *slog.Logger) (*policy.Eng
 		if err != nil {
 			return
 		}
-		defer w.Close()
+		defer func() { _ = w.Close() }()
 		_ = w.Add(path)
 		_ = w.Add(dirOf(path))
 		for {

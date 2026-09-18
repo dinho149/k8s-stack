@@ -8,35 +8,58 @@
 config:
   teleport:env: prod
   teleport:platform: eks
+  # CI previews render against the kind context with TELEPORT_ALLOW_KIND_CONTEXT=1; a real deploy must set a cloud context.
   teleport:kubeContext: kind-teleport-local
   teleport:clusterName: teleport.example.com
   teleport:publicAddr: teleport.example.com:443
   teleport:version: "18.11.1"
   teleport:edition: community
+  # No local logins off kind: SSO only, WebAuthn only. `make github-sso STACK=prod-eks` fills in the
+  # real organization / client id and stores the client secret (teleport:githubClientSecret).
   teleport:auth:
-    type: local # switch to github with: make github-sso STACK=prod-eks
-    secondFactors: [webauthn, otp]
-    localAuth: true
+    type: github
+    secondFactors: [webauthn]
+    localAuth: false
+  teleport:github:
+    organization: CHANGE-ME
+    clientId: CHANGE-ME
+    teamsToRoles:
+      - team: teleport-users
+        roles: [requester]
+      - team: teleport-approvers
+        roles: [requester, approver]
+      # No standing editor/access anywhere: admins request `break-glass-editor` like everyone else.
+      - team: teleport-admins
+        roles: [requester, approver, auditor]
   teleport:tls:
     mode: cert-manager
     issuerName: letsencrypt
     issuerKind: ClusterIssuer
+  # Production deploys by digest only (make release prints them); pullPolicy Always is refused.
   teleport:images:
     registry: ghcr.io/CHANGE-ME/k8s-teleport
-    tag: latest
-    pullPolicy: Always
-  teleport:users:
-    - name: admin
-      roles: [editor, access, auditor, approver]
-      traits:
-        logins: [root, dev]
-  # teleport:chartMode:
-  #   mode: aws
-  #   region: eu-west-1
-  #   backendTable: teleport-backend
-  #   auditLogTable: teleport-audit
-  #   sessionRecordingBucket: teleport-sessions
-  #   serviceAccountRoleArn: arn:aws:iam::123456789012:role/teleport-cluster
+    tag: CHANGE-ME
+    pullPolicy: IfNotPresent
+    digests:
+      teleport-access: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      access-agent: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  # No local users on cloud stacks: the profile invariants refuse standing editor/access off local,
+  # and localAuth is off anyway. Administration happens through an approved break-glass-editor request.
+  # Production refuses the standalone (PVC) backend: DynamoDB + S3, created outside this stack.
+  teleport:chartMode:
+    mode: aws
+    region: eu-west-1
+    backendTable: CHANGE-ME-teleport-backend
+    auditLogTable: CHANGE-ME-teleport-audit
+    sessionRecordingBucket: CHANGE-ME-teleport-sessions
+    auditLogMirrorOnStdout: true
+    serviceAccountRoleArn: arn:aws:iam::123456789012:role/CHANGE-ME-teleport-cluster
   teleport:dummies:
     enabled: false
+  teleport:services:
+    agent:
+      enabled: true
+      adapters: [slack]
+      allowedEmailDomains: [CHANGE-ME.example.com]
+      slackAllowedTeamIds: [TCHANGEME]
 encryptionsalt: v1:IbEW/EFeCz0=:v1:86w7PUYq7VV1Yyla:NfA6YEpneWUmlUcJlIpucrAlNkIveQ==
