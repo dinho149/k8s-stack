@@ -16,11 +16,12 @@ import (
 // MinSecretLen is the minimum length (bytes) of every shared secret and signing key.
 const MinSecretLen = 32
 
-// Config is shared by the mcp and broker subcommands.
+// Config is shared by the mcp, broker and portal subcommands.
 type Config struct {
 	Teleport TeleportConfig `json:"teleport"`
 	MCP      MCPConfig      `json:"mcp"`
 	Broker   BrokerConfig   `json:"broker"`
+	Portal   PortalConfig   `json:"portal"`
 	// IdentitySigningKey (TA_IDENTITY_SIGNING_KEY) verifies the per-turn identity assertions the
 	// chat agent signs (X-Teleport-Assertion); shared by the MCP server and the broker.
 	IdentitySigningKey string `json:"identity_signing_key"`
@@ -67,12 +68,30 @@ type BrokerConfig struct {
 	Approvals string `json:"approvals"`
 }
 
+// PortalConfig configures the access portal API (the JSON backend of the Dogfood portal's Access pages).
+type PortalConfig struct {
+	HTTPAddr string `json:"http_addr"` // ":8084"
+	// ServiceToken (TA_PORTAL_SERVICE_TOKEN) is the bearer the Backstage backend presents; with it, the
+	// X-Dogfood-Subject header is trusted (same model as the lifecycle API).
+	ServiceToken string `json:"service_token"`
+	// IdentityMapFile (TA_PORTAL_IDENTITY_MAP_FILE) maps portal subjects to Teleport users: JSON {"subject": "user"}.
+	IdentityMapFile string `json:"identity_map_file"`
+	// IdentityFallback (TA_PORTAL_IDENTITY_FALLBACK): none (default) | username (an unmapped subject that
+	// looks like a username is used as the Teleport user; right when Teleport usernames are GitHub logins).
+	IdentityFallback string `json:"identity_fallback"`
+	// BrokerURL/BrokerToken: approve/deny go through the broker so it stays the single approval authority.
+	BrokerURL   string `json:"broker_url"`
+	BrokerToken string `json:"broker_token"`
+	PolicyFile  string `json:"policy_file"`
+}
+
 // Load reads TA_CONFIG_FILE (if set) then overlays TA_* environment variables.
 func Load() (*Config, error) {
 	c := &Config{
 		Teleport: TeleportConfig{Edition: "community"},
 		MCP:      MCPConfig{PolicyFile: "/etc/teleport-access/policy.yaml"},
 		Broker:   BrokerConfig{HTTPAddr: ":8081", PolicyFile: "/etc/teleport-access/policy.yaml", Mode: "watch", PollInterval: time.Minute, Approvals: "setstate"},
+		Portal:   PortalConfig{HTTPAddr: ":8084", IdentityFallback: "none", PolicyFile: "/etc/teleport-access/policy.yaml"},
 		LogLevel: "info",
 	}
 	if f := os.Getenv("TA_CONFIG_FILE"); f != "" {
@@ -120,6 +139,13 @@ func Load() (*Config, error) {
 		}
 		c.Broker.PollInterval = d
 	}
+	str("TA_PORTAL_HTTP_ADDR", &c.Portal.HTTPAddr)
+	str("TA_PORTAL_SERVICE_TOKEN", &c.Portal.ServiceToken)
+	str("TA_PORTAL_IDENTITY_MAP_FILE", &c.Portal.IdentityMapFile)
+	str("TA_PORTAL_IDENTITY_FALLBACK", &c.Portal.IdentityFallback)
+	str("TA_PORTAL_BROKER_URL", &c.Portal.BrokerURL)
+	str("TA_PORTAL_BROKER_TOKEN", &c.Portal.BrokerToken)
+	str("TA_PORTAL_POLICY_FILE", &c.Portal.PolicyFile)
 	str("TA_IDENTITY_SIGNING_KEY", &c.IdentitySigningKey)
 	str("TA_LOG_LEVEL", &c.LogLevel)
 	boolean("TA_LOG_TEXT", &c.LogText)
@@ -142,9 +168,25 @@ func (c *Config) Validate(sub string) error {
 	}
 	mcpHTTP := strings.Contains(sub, "mcp") && c.MCP.HTTPAddr != ""
 	broker := strings.Contains(sub, "broker")
+	portal := strings.Contains(sub, "portal")
 	secret("mcp.shared_token", "TA_MCP_SHARED_TOKEN", c.MCP.SharedToken, mcpHTTP)
 	secret("mcp.broker_token", "TA_MCP_BROKER_TOKEN", c.MCP.BrokerToken, false)
-	secret("identity_signing_key", "TA_IDENTITY_SIGNING_KEY", c.IdentitySigningKey, mcpHTTP || broker)
+	secret("identity_signing_key", "TA_IDENTITY_SIGNING_KEY", c.IdentitySigningKey, mcpHTTP || broker || portal)
+	if portal {
+		secret("portal.service_token", "TA_PORTAL_SERVICE_TOKEN", c.Portal.ServiceToken, true)
+		secret("portal.broker_token", "TA_PORTAL_BROKER_TOKEN", c.Portal.BrokerToken, true)
+		if c.Portal.BrokerURL == "" {
+			errs = append(errs, "portal.broker_url (TA_PORTAL_BROKER_URL) is required: approvals go through the broker")
+		}
+		switch c.Portal.IdentityFallback {
+		case "none", "username":
+		default:
+			errs = append(errs, "portal.identity_fallback must be none|username")
+		}
+		if c.Portal.IdentityMapFile == "" && c.Portal.IdentityFallback == "none" {
+			errs = append(errs, "portal: set portal.identity_map_file (TA_PORTAL_IDENTITY_MAP_FILE) or portal.identity_fallback=username, otherwise no subject can be mapped")
+		}
+	}
 	if broker {
 		secret("broker.api_token", "TA_BROKER_API_TOKEN", c.Broker.APIToken, true)
 		secret("broker.webhook_secret", "TA_BROKER_WEBHOOK_SECRET", c.Broker.WebhookSecret, c.Broker.AgentWebhookURL != "")

@@ -307,7 +307,12 @@ func (s *Service) humanDecision(ctx context.Context, id string, by Approver, rea
 	if reason != "" {
 		full += ": " + reason
 	}
-	ann := map[string][]string{"access-broker/mode": {"chat"}, "access-broker/approver": {by.TeleportUser}, "access-broker/channel": {by.Adapter}}
+	// Human decisions arrive from a chat adapter or from the access portal; the mode records which.
+	mode := "chat"
+	if by.Adapter == "portal" {
+		mode = "portal"
+	}
+	ann := map[string][]string{"access-broker/mode": {mode}, "access-broker/approver": {by.TeleportUser}, "access-broker/channel": {by.Adapter}}
 	if rec, ok := s.Store.Get(id); ok {
 		ann["access-broker/rule"] = []string{rec.Decision.Rule}
 	}
@@ -319,7 +324,7 @@ func (s *Service) humanDecision(ctx context.Context, id string, by Approver, rea
 		rec = &Record{ID: id, User: r.GetUser(), Roles: r.GetRoles(), SeenAt: time.Now()}
 	}
 	rec.ResolvedAt = time.Now()
-	rec.Resolution = &Resolution{State: verb, By: by.TeleportUser, Mode: "chat", Reason: reason}
+	rec.Resolution = &Resolution{State: verb, By: by.TeleportUser, Mode: mode, Reason: reason}
 	s.Store.Put(rec)
 	s.Log.Info("human decision", "request_id", id, "state", verb, "by", by.TeleportUser, "adapter", by.Adapter)
 	updated, err := s.Find(ctx, id)

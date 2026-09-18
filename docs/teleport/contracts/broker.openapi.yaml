@@ -15,7 +15,7 @@ info:
     Identity assertion format (shared with services/access-agent/src/identity/assertion.ts):
     `X-Teleport-Assertion: <b64url(payloadJSON)>.<b64url(HMAC-SHA256(TA_IDENTITY_SIGNING_KEY, b64url(payloadJSON)))>`
     base64url without padding; the HMAC input is the base64url payload string. Payload fields: `sub` (Teleport
-    username, required, <= 255 chars), `email`, `platform` (slack|teams|gchat|cli), `platform_user_id`,
+    username, required, <= 255 chars), `email`, `platform` (slack|teams|gchat|cli|portal), `platform_user_id`,
     `aud` ("broker" here, "mcp" for the MCP server), `iat`, `exp` (unix seconds, exp-iat <= 60, iat at most 30s in
     the future), `jti` (UUID, single use for 5 minutes). Failures answer 401.
 
@@ -89,7 +89,7 @@ components:
       properties:
         sub: { type: string, maxLength: 255, description: Teleport username }
         email: { type: string }
-        platform: { type: string, enum: [slack, teams, gchat, cli] }
+        platform: { type: string, enum: [slack, teams, gchat, cli, portal] }
         platform_user_id: { type: string }
         aud: { type: string, enum: [mcp, broker] }
         iat: { type: integer, description: unix seconds }
@@ -105,7 +105,7 @@ components:
       properties: { action: { type: string, enum: [auto_approve, require_approval, deny] }, rule: { type: string }, reason: { type: string }, ttl_cap: { type: string }, approvers: { type: object, properties: { teleport_roles: { type: array, items: { type: string } }, emails: { type: array, items: { type: string } } } } }
     Resolution:
       type: object
-      properties: { state: { type: string, enum: [approved, denied, expired] }, by: { type: string }, mode: { type: string, enum: [auto, chat, external] }, reason: { type: string } }
+      properties: { state: { type: string, enum: [approved, denied, expired] }, by: { type: string }, mode: { type: string, enum: [auto, chat, portal, external] }, reason: { type: string } }
     Request:
       type: object
       required: [id, user, roles, state, created, expires]

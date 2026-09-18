@@ -1,4 +1,4 @@
-package mcpserver
+package accessapi
 
 import (
 	"sync"
@@ -7,17 +7,18 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Per-principal limits on create_access_request: a short burst limit and an hourly budget.
+// Per-user limits on CreateRequest: a short burst limit and an hourly budget. Each process (MCP
+// server, portal API) keeps its own limiter; Teleport's own limits bound the total.
 const (
-	createPerMinute   = 5
-	createBurst       = 5
-	createPerHour     = 20
+	CreatePerMinute   = 5
+	CreateBurst       = 5
+	CreatePerHour     = 20
 	limiterIdleExpiry = 2 * time.Hour
 	maxTrackedUsers   = 10_000
 )
 
-// principalLimiters keeps one pair of token buckets per Teleport user (bounded, expiring).
-type principalLimiters struct {
+// Limiter keeps one pair of token buckets per Teleport user (bounded, expiring).
+type Limiter struct {
 	mu   sync.Mutex
 	now  func() time.Time
 	byID map[string]*userLimiter
@@ -29,13 +30,14 @@ type userLimiter struct {
 	seen   time.Time
 }
 
-func newPrincipalLimiters() *principalLimiters {
-	return &principalLimiters{now: time.Now, byID: map[string]*userLimiter{}}
+// NewLimiter returns an empty limiter.
+func NewLimiter() *Limiter {
+	return &Limiter{now: time.Now, byID: map[string]*userLimiter{}}
 }
 
-// allow reports whether user may create another request now. When tracking is saturated with
+// Allow reports whether user may create another request now. When tracking is saturated with
 // live users it fails closed.
-func (p *principalLimiters) allow(user string) bool {
+func (p *Limiter) Allow(user string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := p.now()
@@ -51,7 +53,7 @@ func (p *principalLimiters) allow(user string) bool {
 				return false
 			}
 		}
-		l = &userLimiter{minute: rate.NewLimiter(rate.Every(time.Minute/createPerMinute), createBurst), hour: rate.NewLimiter(rate.Every(time.Hour/createPerHour), createPerHour)}
+		l = &userLimiter{minute: rate.NewLimiter(rate.Every(time.Minute/CreatePerMinute), CreateBurst), hour: rate.NewLimiter(rate.Every(time.Hour/CreatePerHour), CreatePerHour)}
 		p.byID[user] = l
 	}
 	l.seen = now

@@ -116,6 +116,10 @@ func (f *API) CreateAccessRequestV2(_ context.Context, req types.AccessRequest) 
 	if req.GetAccessExpiry().IsZero() {
 		req.SetAccessExpiry(time.Now().Add(8 * time.Hour))
 	}
+	// Like Teleport, a dry run is validated and echoed back but never stored.
+	if req.GetDryRun() {
+		return req, nil
+	}
 	f.Requests[req.GetName()] = req
 	f.emit(types.OpPut, req)
 	return req, nil

@@ -1,8 +1,9 @@
-// teleport-access: MCP server and access broker for a Teleport cluster.
+// teleport-access: MCP server, access broker and access portal API for a Teleport cluster.
 //
 //	teleport-access mcp      # MCP server (stdio; --http :8080 adds Streamable HTTP)
 //	teleport-access broker   # access broker (watcher + HTTP API on :8081)
-//	teleport-access all      # both in one process (local development)
+//	teleport-access portal   # access portal API for the Dogfood portal (HTTP API on :8084)
+//	teleport-access all      # mcp + broker in one process (local development)
 //	teleport-access policy validate|eval
 package main
 
@@ -22,24 +23,27 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/accessapi"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/broker"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/config"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/httpx"
 	mcpserver "github.com/yeaboi/k8s-stack/internal/teleportaccess/mcp"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/portal"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport"
 )
 
 var version = "dev"
 
 func main() {
-	root := &cobra.Command{Use: "teleport-access", Short: "Teleport MCP server and access broker", Version: version, SilenceUsage: true}
+	root := &cobra.Command{Use: "teleport-access", Short: "Teleport MCP server, access broker and access portal API", Version: version, SilenceUsage: true}
 	var httpAddr string
 	mcpCmd := &cobra.Command{Use: "mcp", Short: "Run the MCP server", RunE: func(cmd *cobra.Command, _ []string) error {
 		return run(cmd.Context(), "mcp", httpAddr)
 	}}
 	mcpCmd.Flags().StringVar(&httpAddr, "http", "", "also serve Streamable HTTP on this address (e.g. :8080); stdio is always served unless --http is set")
 	brokerCmd := &cobra.Command{Use: "broker", Short: "Run the access broker", RunE: func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), "broker", "") }}
+	portalCmd := &cobra.Command{Use: "portal", Short: "Run the access portal API (backend of the Dogfood portal's Access pages)", RunE: func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), "portal", "") }}
 	allCmd := &cobra.Command{Use: "all", Short: "Run MCP (HTTP) and broker together", RunE: func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), "mcp,broker", httpAddr) }}
 	allCmd.Flags().StringVar(&httpAddr, "http", ":8080", "MCP Streamable HTTP address")
 
@@ -74,7 +78,7 @@ func main() {
 	evalCmd.Flags().StringVar(&evalRoles, "roles", "", "comma separated roles")
 	evalCmd.Flags().StringVar(&evalTTL, "ttl", "", "requested duration")
 	policyCmd.AddCommand(evalCmd)
-	root.AddCommand(mcpCmd, brokerCmd, allCmd, policyCmd)
+	root.AddCommand(mcpCmd, brokerCmd, portalCmd, allCmd, policyCmd)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	err := root.ExecuteContext(ctx)
@@ -105,8 +109,12 @@ func run(ctx context.Context, modes, httpAddr string) error {
 	defer func() { _ = clt.Close() }()
 
 	policyFile := cfg.Broker.PolicyFile
-	if !strings.Contains(modes, "broker") {
+	switch {
+	case strings.Contains(modes, "broker"):
+	case strings.Contains(modes, "mcp"):
 		policyFile = cfg.MCP.PolicyFile
+	case strings.Contains(modes, "portal"):
+		policyFile = cfg.Portal.PolicyFile
 	}
 	engine, err := loadPolicy(ctx, policyFile, log)
 	if err != nil {
@@ -172,6 +180,21 @@ func run(ctx context.Context, modes, httpAddr string) error {
 		} else {
 			go func() { errc <- srv.RunStdio(ctx) }()
 		}
+	}
+
+	if strings.Contains(modes, "portal") {
+		mapper, err := portal.LoadMapper(cfg.Portal.IdentityMapFile, cfg.Portal.IdentityFallback)
+		if err != nil {
+			return err
+		}
+		svc := accessapi.New(accessapi.Deps{API: clt, Policy: engine, Log: log.With("component", "portal"), Edition: cfg.Teleport.Edition, ClusterName: clt.ClusterName(), Version: clt.ServerVersion(), ApproverRoles: []string{"approver"}})
+		h := portal.Handler(portal.Config{
+			ServiceToken: cfg.Portal.ServiceToken, Mapper: mapper, API: clt, Log: log.With("component", "portal-http"),
+			Broker: portal.NewBrokerClient(cfg.Portal.BrokerURL, cfg.Portal.BrokerToken, []byte(cfg.IdentitySigningKey)),
+			Ready:  func(ctx context.Context) error { _, err := clt.Ping(ctx); return err },
+		}, svc)
+		hs := httpx.NewServer(cfg.Portal.HTTPAddr, h)
+		go func() { errc <- serve(ctx, hs, log, "portal http") }()
 	}
 
 	select {
