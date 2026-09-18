@@ -260,10 +260,9 @@ jobs:
         with: { sarif_file: checkov-workflows.sarif, category: checkov-workflows }
 
   dependency-review:
-    # Needs the repository's Dependency graph (Settings -> Code security). Until it is enabled the action
-    # cannot run, so it must not block the PR; enable the graph to make this gate enforcing.
-    if: github.event_name == 'pull_request'
-    continue-on-error: true
+    # Needs the repository's Dependency graph (Settings -> Code security). Enable it, then set the repository
+    # variable DEPENDENCY_GRAPH_ENABLED=true to turn this gate on; until then the job is skipped, not failed.
+    if: github.event_name == 'pull_request' && vars.DEPENDENCY_GRAPH_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -285,7 +284,7 @@ jobs:
       security-events: write
     env:
       # Dogfood's own trees are outside this workflow's remit (their scanners live with their gate).
-      TRIVY_SKIP_DIRS: node_modules,.dogfood,packages,services/agent,deploy/charts,infra/aws,infra/gcp,infra/data,catalog,examples,configs,environments,scripts
+      TRIVY_SKIP_DIRS: node_modules,.dogfood,packages,services/agent,deploy/charts,deploy/identity,deploy/monitoring,infra/aws,infra/gcp,infra/data,catalog,examples,configs,environments,scripts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
