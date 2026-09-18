@@ -1,7 +1,7 @@
 # prod-eks: Teleport on an EXISTING eks cluster reached through kubeContext.
 #
 # Scaffold: passes `make preview STACK=prod-eks` (optionally against the kind context with
-#   make preview STACK=prod-eks PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local")
+#   make preview STACK=prod-eks PULUMI_ARGS="--config teleport:kubeContext=kind-dogfood-local")
 # Before a real deploy: set kubeContext, clusterName/publicAddr (a DNS name you control), a cert-manager
 # ClusterIssuer or ACME email, GitHub SSO secrets (make github-sso STACK=prod-eks), images.registry,
 # and chartMode (aws/gcp/azure) once the managed backends exist.
@@ -9,7 +9,7 @@ config:
   teleport:env: prod
   teleport:platform: eks
   # CI previews render against the kind context with TELEPORT_ALLOW_KIND_CONTEXT=1; a real deploy must set a cloud context.
-  teleport:kubeContext: kind-teleport-local
+  teleport:kubeContext: kind-dogfood-local
   teleport:clusterName: teleport.example.com
   teleport:publicAddr: teleport.example.com:443
   teleport:version: "18.11.1"

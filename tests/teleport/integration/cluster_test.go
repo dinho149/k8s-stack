@@ -10,7 +10,7 @@ import (
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
 
-	"github.com/dinho/k8s-teleport/tests/integration/harness"
+	"github.com/yeaboi/k8s-stack/tests/teleport/integration/harness"
 )
 
 var catalog = []string{"dev-ssh", "dev-db", "dev-k8s", "dev-app", "prod-ssh", "prod-db", "prod-k8s", "prod-app", "dev-dba", "prod-dba", "k8s-admin", "break-glass-editor", "requester", "approver"}

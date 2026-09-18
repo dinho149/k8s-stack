@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # crd-schemas.sh — generate kubeconform JSON schemas from the Teleport operator CRDs (one-off).
 source "$(dirname "$0")/_common.sh"
-out="$REPO_ROOT/tests/policy/schemas"; mkdir -p "$out"
+out="$REPO_ROOT/tests/teleport/policy/schemas"; mkdir -p "$out"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 ui::step "Pulling teleport-cluster chart $TELEPORT_VERSION for its CRDs"
 helm pull teleport-cluster --repo https://charts.releases.teleport.dev --version "$TELEPORT_VERSION" --untar --untardir "$tmp" >/dev/null
@@ -25,4 +25,4 @@ for d in docs:
             json.dump(schema, f)
 PY
 done
-ui::ok "schemas in tests/policy/schemas ($(find "$out" -name '*.json' | wc -l | tr -d ' ') files)"
+ui::ok "schemas in tests/teleport/policy/schemas ($(find "$out" -name '*.json' | wc -l | tr -d ' ') files)"

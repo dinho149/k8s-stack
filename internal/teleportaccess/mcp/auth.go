@@ -16,9 +16,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/httpx"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/httpx"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/assertion"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/assertion"
 )
 
 // Principal is the Teleport user a session acts for.

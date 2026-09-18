@@ -44,15 +44,15 @@ export const TlsSchema = z.discriminatedUnion("mode", [
     issuerGroup: z.string().default("cert-manager.io"),
   }),
   z.object({ mode: z.literal("existing-secret"), secretName: z.string() }),
-  // kind only: PEM files written by deploy/scripts/local-tls.sh (mkcert) are mounted as a kubernetes.io/tls
+  // kind only: PEM files written by deploy/teleport/scripts/local-tls.sh (mkcert) are mounted as a kubernetes.io/tls
   // Secret (tls.crt, tls.key, ca.crt). Paths are relative to infra/teleport (the Pulumi project directory).
   // The proxy verifies its own certificate chain at startup, so the issuing root (caFile) is added to its
   // trust store next to the system roots. When any file is missing the chart falls back to self-signed.
   z.object({
     mode: z.literal("local-files"),
-    certFile: z.string().min(1).default("../.state/tls/teleport.crt"),
-    keyFile: z.string().min(1).default("../.state/tls/teleport.key"),
-    caFile: z.string().min(1).default("../.state/tls/ca.crt"),
+    certFile: z.string().min(1).default("../../.dogfood/teleport/tls/teleport.crt"),
+    keyFile: z.string().min(1).default("../../.dogfood/teleport/tls/teleport.key"),
+    caFile: z.string().min(1).default("../../.dogfood/teleport/tls/ca.crt"),
   }),
 ]);
 

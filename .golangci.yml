@@ -1,6 +1,6 @@
 # golangci-lint v2 configuration shared by the three Go modules
-# (services/teleport-access, tests/tools, tests/integration). Run per module:
-#   cd services/teleport-access && golangci-lint run --config=../../.golangci.yml ./...
+# (cmd/teleport-access + internal/teleportaccess, tests/teleport/tools, tests/teleport/integration). Run per module:
+#   cd cmd/teleport-access + internal/teleportaccess && golangci-lint run --config=../../.golangci.yml ./...
 version: "2"
 
 run:

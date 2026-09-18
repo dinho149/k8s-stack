@@ -1,7 +1,7 @@
-// totp prints the current TOTP code for a base32 secret (used by tests/e2e to log in headlessly).
+// totp prints the current TOTP code for a base32 secret (used by tests/teleport/e2e to log in headlessly).
 //
 //	go run ./totp -secret JBSWY3DPEHPK3PXP
-//	go run ./totp -users tests/.state/users.json -user alice
+//	go run ./totp -users .dogfood/teleport/state/users.json -user alice
 package main
 
 import (

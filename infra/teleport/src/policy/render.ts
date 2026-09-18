@@ -226,7 +226,7 @@ export function assignableRoleNames(): string[] {
   return [...managed, "editor", "auditor", "access"];
 }
 
-/** Broker policy (services/teleport-access reads this). Rendered from the same catalog. */
+/** Broker policy (the teleport-access broker reads this). Rendered from the same catalog. */
 export function renderBrokerPolicy(): string {
   const low = CATALOG.filter((r) => r.tier === "low");
   const high = CATALOG.filter((r) => r.tier === "high");

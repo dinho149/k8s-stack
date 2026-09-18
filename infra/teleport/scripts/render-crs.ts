@@ -1,7 +1,7 @@
 /**
  * Render the Teleport CRs (and Helm values) of a stack offline using Pulumi mocks, so they can be
  * linted with kubeconform / reviewed without a cluster.
- *   npm run render -- --stack local --out ../../tests/policy/rendered
+ *   npm run render -- --stack local --out ../../tests/teleport/policy/rendered
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -13,7 +13,7 @@ function arg(name: string, def: string): string {
   return i >= 0 ? process.argv[i + 1] : def;
 }
 const stack = arg("--stack", "local");
-const out = path.resolve(arg("--out", "../../tests/policy/rendered"));
+const out = path.resolve(arg("--out", "../../tests/teleport/policy/rendered"));
 fs.mkdirSync(out, { recursive: true });
 
 // Load stack config from Pulumi.<stack>.yaml into the mock runtime.

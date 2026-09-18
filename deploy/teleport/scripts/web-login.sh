@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # web-login.sh — open the Teleport web UI and print what to type: user, password and a fresh TOTP code.
-# Local stack only: the credentials are the throwaway ones seeded into tests/.state/users.json.
+# Local stack only: the credentials are the throwaway ones seeded into .dogfood/teleport/state/users.json.
 #
 #   web-login.sh [user]    default user: $USER_NAME, then admin
 source "$(dirname "$0")/_common.sh"
 # shellcheck source=lib/tsh-login.sh
-source "$REPO_ROOT/deploy/scripts/lib/tsh-login.sh"
+source "$REPO_ROOT/deploy/teleport/scripts/lib/tsh-login.sh"
 [[ "$STACK" == "local" ]] || ui::die "web-login is for STACK=local only (cloud stacks log in with SSO at https://$PROXY_ADDR)"
 user="${1:-${USER_NAME:-admin}}"
 url="https://$PROXY_ADDR/web/login"

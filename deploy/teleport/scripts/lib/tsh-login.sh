@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # tsh-login.sh — headless `tsh login --auth local` (password + TOTP) for the local kind stack.
 # Sourced after _common.sh (needs REPO_ROOT, STATE_DIR, UI_LOG_DIR, PROXY_ADDR, TSH_INSECURE_FLAG).
-# Credentials come from tests/.state/users.json, written by tests/tools/seed-users (make up / make bootstrap-users).
+# Credentials come from .dogfood/teleport/state/users.json, written by tests/teleport/tools/seed-users (make up / make bootstrap-users).
 TSH_BIN="${TSH_BIN:-$REPO_ROOT/bin/tsh}"
 USERS_JSON="${USERS_JSON:-$STATE_DIR/users.json}"
 
 tshlogin::require_creds() {
-  [[ -f "$USERS_JSON" ]] || ui::die "no seeded credentials at tests/.state/users.json — run: make up  (or: make bootstrap-users)"
+  [[ -f "$USERS_JSON" ]] || ui::die "no seeded credentials at .dogfood/teleport/state/users.json — run: make up  (or: make bootstrap-users)"
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1])) else 1)' "$USERS_JSON" "$1" \
     || ui::die "user '$1' is not enrolled — run: make bootstrap-users USERS=$1"
 }
@@ -33,7 +33,7 @@ tshlogin::fresh_window() {
 tshlogin::code() {
   ui::require go
   tshlogin::fresh_window "$1" >&2   # callers capture stdout: only the code may go there
-  go run -C "$REPO_ROOT/tests/tools" ./totp -users "$USERS_JSON" -user "$1"
+  go run -C "$REPO_ROOT" ./tests/teleport/tools/totp -users "$USERS_JSON" -user "$1"
 }
 
 # 0 when the active tsh profile is <user> on this proxy AND still works against the cluster. A profile left
@@ -61,11 +61,11 @@ tshlogin::login() {
   code="$(tshlogin::code "$user")"
   mkdir -p "$UI_LOG_DIR"
   TSH_BIN="$TSH_BIN" TSH_INSECURE_FLAG="$TSH_INSECURE_FLAG" PROXY_ADDR="$PROXY_ADDR" TSH_USER="$user" TSH_PASSWORD="$pw" TSH_OTP="$code" \
-    expect -f "$REPO_ROOT/deploy/scripts/lib/tsh-login.exp" >"$UI_LOG_DIR/tsh-login-$user.log" 2>&1 \
-    || { ui::fail "login as $user failed — log: .logs/tsh-login-$user.log"; tail -20 "$UI_LOG_DIR/tsh-login-$user.log"; return 1; }
+    expect -f "$REPO_ROOT/deploy/teleport/scripts/lib/tsh-login.exp" >"$UI_LOG_DIR/tsh-login-$user.log" 2>&1 \
+    || { ui::fail "login as $user failed — log: .dogfood/logs/teleport/tsh-login-$user.log"; tail -20 "$UI_LOG_DIR/tsh-login-$user.log"; return 1; }
   # "Logged in as" on the terminal is not proof: verify the new session against the cluster.
   tshlogin::active_session_ok "$user" \
-    || { ui::fail "tsh reports a session for $user but the cluster rejects it — log: .logs/tsh-login-$user.log"; tail -12 "$UI_LOG_DIR/tsh-login-$user.log"; return 1; }
+    || { ui::fail "tsh reports a session for $user but the cluster rejects it — log: .dogfood/logs/teleport/tsh-login-$user.log"; tail -12 "$UI_LOG_DIR/tsh-login-$user.log"; return 1; }
   ui::ok "logged in as $user"
 }
 

@@ -20,3 +20,19 @@ test-results/
 
 # Retained legacy state may contain credentials.
 .stack/
+
+# Teleport (Pulumi state, TLS files and seeded test credentials live under .dogfood/teleport/)
+tests/teleport/policy/rendered/
+tests/teleport/policy/schemas/
+infra/**/.pulumi/
+Pulumi.*.yaml.bak
+*.identity
+*.pem
+*.key
+*.sarif
+trivy-results*
+sbom*.spdx.json
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json

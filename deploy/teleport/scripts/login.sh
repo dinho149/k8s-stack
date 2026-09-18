@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # login.sh — `tsh login` the way the cluster is configured: GitHub SSO when a connector exists,
-# otherwise a headless local login (password + TOTP from tests/.state/users.json).
+# otherwise a headless local login (password + TOTP from .dogfood/teleport/state/users.json).
 #
 #   login.sh [user]        default user: $USER_NAME, then admin
 source "$(dirname "$0")/_common.sh"
 # shellcheck source=lib/tsh-login.sh
-source "$REPO_ROOT/deploy/scripts/lib/tsh-login.sh"
+source "$REPO_ROOT/deploy/teleport/scripts/lib/tsh-login.sh"
 user="${1:-${USER_NAME:-admin}}"
-[[ -x "$TSH_BIN" ]] || "$REPO_ROOT/deploy/scripts/install-tsh.sh"
+[[ -x "$TSH_BIN" ]] || "$REPO_ROOT/deploy/teleport/scripts/install-tsh.sh"
 
 # shellcheck disable=SC2086 # CURL_INSECURE_FLAG is empty or -k, decided once in _common.sh
 ping="$(curl -fsS $CURL_INSECURE_FLAG --max-time 5 "https://$PROXY_ADDR/webapi/ping" 2>/dev/null)" \
@@ -20,7 +20,7 @@ case "$auth" in
     $TSH login --auth github ;;
   local)
     [[ "$STACK" == "local" ]] || ui::die "auth.type=local on STACK=$STACK — configure SSO (make github-sso)"
-    ui::step "Local login as $user (password + TOTP from tests/.state/users.json)"
+    ui::step "Local login as $user (password + TOTP from .dogfood/teleport/state/users.json)"
     tshlogin::login "$user" ;;
   *)
     ui::die "unsupported auth type '${auth:-unknown}' — log in manually: $TSH login" ;;

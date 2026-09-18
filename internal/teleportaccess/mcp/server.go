@@ -10,8 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport"
 )
 
 // Deps for the MCP server.

@@ -201,7 +201,7 @@ describe("service roles can see inventory but not connect", () => {
 import { buildProfile } from "../src/config/profile";
 import { renderAgentAuthEnv } from "../src/components/AccessServices";
 describe("agent auth env", () => {
-  const base = { platform: "kind" as const, kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" as const } };
+  const base = { platform: "kind" as const, kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" as const } };
   it("defaults to api-key and never allows the local login in-cluster", () => {
     const env = renderAgentAuthEnv(buildProfile(base, "local"));
     expect(env).toContainEqual({ name: "CLAUDE_AUTH_MODE", value: "api-key" });
@@ -243,7 +243,7 @@ const crName = (c: Created) => c.inputs.metadata?.name as string;
 const kindOf = (c: Created) => c.inputs.kind as string | undefined;
 
 describe("AccessPolicy resources", () => {
-  const kindBase = { platform: "kind" as const, kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" as const } };
+  const kindBase = { platform: "kind" as const, kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" as const } };
 
   it("enabledBots follows services.harness.enabled", () => {
     expect(enabledBots({ services: { harness: { enabled: true } } } as any)).toContain("harness");

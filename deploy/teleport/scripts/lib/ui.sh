@@ -31,7 +31,7 @@ else
   UI_HLINE="-"; UI_TL="+"; UI_TR="+"; UI_BL="+"; UI_BR="+"; UI_V="|"
 fi
 
-UI_LOG_DIR="${UI_LOG_DIR:-${REPO_ROOT:-.}/.logs}"
+UI_LOG_DIR="${UI_LOG_DIR:-${REPO_ROOT:-.}/.dogfood/logs/teleport}"
 
 ui::cols() { local c; c="$(tput cols 2>/dev/null || echo 100)"; (( c > 120 )) && c=120; echo "$c"; }
 

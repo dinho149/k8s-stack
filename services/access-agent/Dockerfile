@@ -2,8 +2,8 @@
 #
 # Build context: services/access-agent. The npm lockfile lives at the repo root (npm workspaces), so the
 # build ALSO receives the repo root as a named context called `lockfile`:
-#   docker build --build-context lockfile=<repo-root> -t k8s-teleport/access-agent services/access-agent
-# (deploy/scripts/load-images.sh and the GitHub workflows pass it). `npm ci` then validates the real
+#   docker build --build-context lockfile=<repo-root> -t k8s-teleport/access-agent services/access-agent   (Dogfood repo root)
+# (deploy/teleport/scripts/load-images.sh and the GitHub workflows pass it). `npm ci` then validates the real
 # lockfile against a minimal workspace skeleton, so dependency drift fails the build instead of being
 # silently resolved.
 #
@@ -25,6 +25,12 @@ WORKDIR /work
 COPY --from=lockfile package.json package-lock.json ./
 # hadolint ignore=DL3022
 COPY --from=lockfile infra/teleport/package.json ./infra/teleport/
+# hadolint ignore=DL3022
+COPY --from=lockfile services/agent/package.json ./services/agent/
+# hadolint ignore=DL3022
+COPY --from=lockfile packages/backend/package.json ./packages/backend/
+# hadolint ignore=DL3022
+COPY --from=lockfile packages/portal/package.json ./packages/portal/
 COPY package.json ./services/access-agent/
 RUN npm ci --workspace=services/access-agent --include-workspace-root=false --no-fund --no-audit
 COPY tsconfig.json tsconfig.build.json ./services/access-agent/

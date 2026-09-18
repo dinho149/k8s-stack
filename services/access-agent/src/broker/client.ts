@@ -1,5 +1,5 @@
 /**
- * BrokerClient — the access broker's HTTP API (services/contracts/broker.openapi.yaml).
+ * BrokerClient — the access broker's HTTP API (docs/teleport/contracts/broker.openapi.yaml).
  *
  * Every call carries the shared bearer token. Approve/deny additionally carry a signed identity
  * assertion (aud "broker") for the approver; the approver is never named in the JSON body, so a

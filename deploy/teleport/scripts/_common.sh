@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Shared environment for deploy scripts. Sourced, not executed.
 set -euo pipefail
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 # shellcheck source=lib/ui.sh
-source "$REPO_ROOT/deploy/scripts/lib/ui.sh"
+source "$REPO_ROOT/deploy/teleport/scripts/lib/ui.sh"
 [[ -f "$REPO_ROOT/.env" ]] && set -a && source "$REPO_ROOT/.env" && set +a
 
 STACK="${STACK:-local}"
-KIND_CLUSTER="${KIND_CLUSTER:-teleport-local}"
+KIND_CLUSTER="${KIND_CLUSTER:-dogfood-local}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-$KIND_CLUSTER}"
 TELEPORT_VERSION="${TELEPORT_VERSION:-18.11.1}"
 TELEPORT_NAMESPACE="${TELEPORT_NAMESPACE:-teleport}"
@@ -16,10 +16,10 @@ PROXY_ADDR="${PROXY_ADDR:-teleport.127.0.0.1.nip.io:3080}"
 # shellcheck disable=SC2034 # consumed by the scripts that source this file
 BIN_DIR="$REPO_ROOT/bin"
 # shellcheck disable=SC2034
-STATE_DIR="$REPO_ROOT/tests/.state"
+STATE_DIR="${STATE_DIR:-$REPO_ROOT/.dogfood/teleport/state}"
 # shellcheck disable=SC2034
 KUBECTL="kubectl --context $KUBE_CONTEXT"
-export UI_LOG_DIR="$REPO_ROOT/.logs"
+export UI_LOG_DIR="${UI_LOG_DIR:-$REPO_ROOT/.dogfood/logs/teleport}"
 
 if [[ "$KIND_CLUSTER" == "kind" ]]; then ui::die "refusing to operate on the default kind cluster 'kind' (KIND_CLUSTER=kind)"; fi
 
@@ -41,8 +41,8 @@ export TSH_INSECURE_FLAG CURL_INSECURE_FLAG
 # shellcheck disable=SC2089 # intentionally a string that is word-split when invoked as $TSH
 TSH="${TSH:-$BIN_DIR/tsh ${TSH_INSECURE_FLAG:+$TSH_INSECURE_FLAG }--proxy $PROXY_ADDR}"
 
-# mkcert (deploy/scripts/local-tls.sh): the local certificate files and whether the browser trusts them.
-LOCAL_TLS_DIR="$REPO_ROOT/infra/.state/tls"
+# mkcert (deploy/teleport/scripts/local-tls.sh): the local certificate files and whether the browser trusts them.
+LOCAL_TLS_DIR="${LOCAL_TLS_DIR:-$REPO_ROOT/.dogfood/teleport/tls}"
 # 0 when the mkcert root CA exists and is in the system trust store (what `mkcert -install` does).
 common::mkcert_ca_trusted() {
   command -v mkcert >/dev/null 2>&1 || return 1
@@ -73,7 +73,7 @@ common::tls_note() {
 # common::require_cloud_secrets is called by targets that touch a non-local stack.
 common::require_cloud_secrets() {
   [[ "$STACK" == "local" ]] && return 0
-  local backend="${PULUMI_BACKEND_URL:-file://$REPO_ROOT/infra/.state}" pass="${PULUMI_CONFIG_PASSPHRASE:-}"
+  local backend="${PULUMI_BACKEND_URL:-file://$REPO_ROOT/.dogfood/teleport/pulumi}" pass="${PULUMI_CONFIG_PASSPHRASE:-}"
   local bad=0 provider=""
   # A stack already initialised with a KMS secrets provider does not use a passphrase at all.
   [[ -f "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" ]] && provider="$(awk '$1=="secretsprovider:"{print $2}' "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml")"

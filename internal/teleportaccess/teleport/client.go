@@ -11,7 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gravitational/teleport/api/client"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/config"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/config"
 )
 
 // Client is a connected Teleport API client whose identity file reloads when tbot renews it.

@@ -21,7 +21,7 @@ if [[ "$mode" == "subscription" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then ex
 if [[ -z "${MCP_SHARED_TOKEN:-}" || -z "${BROKER_API_TOKEN:-}" || -z "${IDENTITY_SIGNING_KEY:-}" ]]; then
   export PULUMI_CONFIG_PASSPHRASE="${PULUMI_CONFIG_PASSPHRASE:-local-dev}"
   pushd "$REPO_ROOT/infra/teleport" >/dev/null || exit 1
-  pulumi login "${PULUMI_BACKEND_URL:-file://$REPO_ROOT/infra/.state}" >/dev/null 2>&1 || true
+  pulumi login "${PULUMI_BACKEND_URL:-file://$REPO_ROOT/.dogfood/teleport/pulumi}" >/dev/null 2>&1 || true
   export MCP_SHARED_TOKEN="${MCP_SHARED_TOKEN:-$(pulumi stack output mcpSharedToken --show-secrets --stack "$STACK" 2>/dev/null)}"
   export BROKER_API_TOKEN="${BROKER_API_TOKEN:-$(pulumi stack output brokerApiToken --show-secrets --stack "$STACK" 2>/dev/null)}"
   # Per-turn identity assertions (X-Teleport-Assertion) are signed with this key; MCP and broker verify it.
@@ -32,8 +32,8 @@ fi
 [[ -n "$IDENTITY_SIGNING_KEY" ]] || ui::die "could not read identitySigningKey from stack $STACK (redeploy: make deploy)"
 # Port-forward MCP and broker unless URLs were given.
 pids=()
-if [[ -z "${MCP_URL:-}" ]]; then $KUBECTL -n teleport-access port-forward svc/teleport-mcp 18080:8080 >"$UI_LOG_DIR/pf-mcp.log" 2>&1 & pids+=($!); export MCP_URL=http://localhost:18080/mcp; fi
-if [[ -z "${BROKER_URL:-}" ]]; then $KUBECTL -n teleport-access port-forward svc/access-broker 18081:8081 >"$UI_LOG_DIR/pf-broker.log" 2>&1 & pids+=($!); export BROKER_URL=http://localhost:18081; fi
+if [[ -z "${MCP_URL:-}" ]]; then $KUBECTL -n teleport-access port-forward svc/teleport-mcp 18380:8080 >"$UI_LOG_DIR/pf-mcp.log" 2>&1 & pids+=($!); export MCP_URL=http://localhost:18380/mcp; fi
+if [[ -z "${BROKER_URL:-}" ]]; then $KUBECTL -n teleport-access port-forward svc/access-broker 18381:8081 >"$UI_LOG_DIR/pf-broker.log" 2>&1 & pids+=($!); export BROKER_URL=http://localhost:18381; fi
 cleanup() { local p; for p in "${pids[@]:-}"; do [[ -n "$p" ]] && kill "$p" 2>/dev/null; done; return 0; }
 trap cleanup EXIT
 (( ${#pids[@]} )) && sleep 3

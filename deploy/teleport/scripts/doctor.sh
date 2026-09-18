@@ -45,7 +45,7 @@ port="${PROXY_ADDR##*:}"
 if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
   if docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -q "${KIND_CLUSTER}-control-plane.*:${port}->"; then ui::status ok "host port $port" "in use by $KIND_CLUSTER (expected)"; else ui::status fail "host port $port" "in use by another process: $(lsof -nP -iTCP:$port -sTCP:LISTEN | awk 'NR==2{print $1}')"; fail=1; fi
 else ui::status ok "host port $port" "free"; fi
-ui::status ok "pulumi backend" "${PULUMI_BACKEND_URL:-file://./infra/.state}"
+ui::status ok "pulumi backend" "${PULUMI_BACKEND_URL:-file://./.dogfood/teleport/pulumi}"
 if [[ "$STACK" == "local" ]]; then
   if [[ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]]; then ui::status warn "pulumi passphrase" "PULUMI_CONFIG_PASSPHRASE unset — Makefile defaults to 'local-dev' for STACK=local only"; else ui::status ok "pulumi passphrase" "set"; fi
 elif common::require_cloud_secrets >/dev/null 2>&1; then ui::status ok "pulumi secrets" "stack $STACK: shared backend, non-default secrets"

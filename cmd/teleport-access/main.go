@@ -22,12 +22,12 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/broker"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/config"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/httpx"
-	mcpserver "github.com/dinho/k8s-teleport/services/teleport-access/internal/mcp"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/broker"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/config"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/httpx"
+	mcpserver "github.com/yeaboi/k8s-stack/internal/teleportaccess/mcp"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport"
 )
 
 var version = "dev"

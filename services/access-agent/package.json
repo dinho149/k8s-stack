@@ -1,5 +1,5 @@
 {
-  "name": "@k8s-teleport/access-agent",
+  "name": "@dogfood/access-agent",
   "private": true,
   "version": "0.1.0",
   "type": "module",

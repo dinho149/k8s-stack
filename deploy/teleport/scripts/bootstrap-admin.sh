@@ -8,8 +8,8 @@ source "$(dirname "$0")/_common.sh"
 [[ "$STACK" == "local" ]] || ui::die "bootstrap-admin is for STACK=local only (STACK=$STACK has no local users; request break-glass-editor instead)"
 user="${1:-admin}"
 ui::section "Bootstrap $user"
-"$REPO_ROOT/deploy/scripts/bootstrap-users.sh" "$user" --force
+"$REPO_ROOT/deploy/teleport/scripts/bootstrap-users.sh" "$user" --force
 ui::info "log in:  make login            (tsh, no prompts)"
 ui::info "         make web-login        (browser: prints user / password / TOTP)"
-ui::warn "'$user' is a break-glass identity. When you are done, lock it:  deploy/scripts/tctl.sh lock --user=$user --message=\"break-glass\""
-ui::info "(list locks: deploy/scripts/tctl.sh get locks   — unlock: deploy/scripts/tctl.sh rm lock/<id>)"
+ui::warn "'$user' is a break-glass identity. When you are done, lock it:  deploy/teleport/scripts/tctl.sh lock --user=$user --message=\"break-glass\""
+ui::info "(list locks: deploy/teleport/scripts/tctl.sh get locks   — unlock: deploy/teleport/scripts/tctl.sh rm lock/<id>)"

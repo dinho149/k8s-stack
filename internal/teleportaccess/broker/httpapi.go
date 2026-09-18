@@ -11,9 +11,9 @@ import (
 	"github.com/gravitational/trace"
 	"golang.org/x/time/rate"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/assertion"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/httpx"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/assertion"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/httpx"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
 )
 
 // API rate limit shared by every caller (the agent is the only legitimate client).
@@ -28,7 +28,7 @@ type decisionBody struct {
 	Reason string `json:"reason"`
 }
 
-// Handler returns the broker HTTP API (see services/contracts/broker.openapi.yaml). Every /v1
+// Handler returns the broker HTTP API (see docs/teleport/contracts/broker.openapi.yaml). Every /v1
 // route needs the bearer token; approve/deny additionally need a valid identity assertion signed
 // with identityKey (audience "broker").
 func (s *Service) Handler(apiToken string, identityKey []byte) http.Handler {

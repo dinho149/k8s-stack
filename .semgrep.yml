@@ -10,14 +10,14 @@ rules:
     severity: ERROR
     message: >-
       InsecureSkipVerify disables TLS verification. Every service talks to Teleport over its real CA;
-      for the kind stack use TELEPORT_INSECURE only in tests/tools (see docs/testing.md).
+      for the kind stack use TELEPORT_INSECURE only in tests/teleport/tools (see docs/testing.md).
     pattern-either:
       - pattern: |
           tls.Config{..., InsecureSkipVerify: true, ...}
       - pattern: |
           $C.InsecureSkipVerify = true
     paths:
-      exclude: ["**/*_test.go", "tests/tools/**"]
+      exclude: ["**/*_test.go", "tests/teleport/tools/**"]
 
   - id: k8s-teleport-go-trusts-x-teleport-user-header
     languages: [go]
@@ -34,7 +34,7 @@ rules:
     languages: [generic]
     severity: ERROR
     message: >-
-      Do not hard-code --insecure. Use $TSH_INSECURE_FLAG from deploy/scripts/_common.sh,
+      Do not hard-code --insecure. Use $TSH_INSECURE_FLAG from deploy/teleport/scripts/_common.sh,
       which is set only for STACK=local against the kind proxy.
     pattern-either:
       - pattern: tsh --insecure
@@ -44,7 +44,7 @@ rules:
       include: ["deploy/**", "tests/**", "Makefile", "infra/**/*.ts", ".github/**"]
       # _common.sh owns the guarded variable; index.ts renders the login hint conditionally on
       # profile.teleport.insecure, which the profile invariants restrict to the kind platform.
-      exclude: ["deploy/scripts/_common.sh", "infra/teleport/index.ts"]
+      exclude: ["deploy/teleport/scripts/_common.sh", "infra/teleport/index.ts"]
 
   - id: k8s-teleport-postgres-trust-auth
     languages: [generic]
@@ -122,7 +122,7 @@ rules:
     pattern-not-inside: |
       $X | pulumi config set $...
     paths:
-      include: ["deploy/scripts/**", "Makefile", ".github/**"]
+      include: ["deploy/teleport/scripts/**", "Makefile", ".github/**"]
 
   - id: k8s-teleport-github-workflow-pull-request-target
     languages: [yaml]
@@ -159,7 +159,7 @@ rules:
           - ...
             securityContext: ...
     paths:
-      include: ["tests/policy/rendered/**", "deploy/**/*.yaml"]
+      include: ["tests/teleport/policy/rendered/**", "deploy/**/*.yaml"]
       exclude: ["deploy/kind/**"]
 
   - id: k8s-teleport-dockerfile-latest-tag-without-digest

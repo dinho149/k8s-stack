@@ -14,7 +14,7 @@ Install these system prerequisites first. Make installs project dependencies; it
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | GNU Make and Git | macOS: Xcode Command Line Tools (`xcode-select --install`); Linux: distribution packages                                               |
 | Python           | 3.9+; [python.org](https://www.python.org/downloads/)                                                                                  |
-| Go               | 1.25+; [go.dev](https://go.dev/dl/)                                                                                                    |
+| Go               | 1.26+; [go.dev](https://go.dev/dl/)                                                                                                    |
 | Node.js and npm  | Node >=22 and <26 (22/24 LTS recommended); [nodejs.org](https://nodejs.org/en/download)                                                |
 | Docker           | Running Docker Desktop or Docker Engine; [Docker installation](https://docs.docker.com/get-started/get-docker/)                        |
 | kind             | [kind installation](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)                                                      |

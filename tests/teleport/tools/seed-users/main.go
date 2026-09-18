@@ -1,8 +1,8 @@
 // seed-users enrols local Teleport users headlessly (password + TOTP) using a bot identity that may
-// create reset tokens. It writes tests/.state/users.json for the e2e scripts.
+// create reset tokens. It writes .dogfood/teleport/state/users.json for the e2e scripts.
 //
-//	TELEPORT_PROXY=teleport.127.0.0.1.nip.io:3080 HARNESS_IDENTITY=tests/.state/harness.identity TELEPORT_INSECURE=1 \
-//	  go run ./seed-users -users alice,bob -out tests/.state/users.json
+//	TELEPORT_PROXY=teleport.127.0.0.1.nip.io:3080 HARNESS_IDENTITY=.dogfood/teleport/state/harness.identity TELEPORT_INSECURE=1 \
+//	  go run ./seed-users -users alice,bob -out .dogfood/teleport/state/users.json
 //
 // A reset token deletes the user's existing MFA devices, so `make up` passes -skip-existing to leave
 // already-enrolled users alone; -force re-enrols them (make bootstrap-admin).
@@ -30,13 +30,13 @@ type cred struct {
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totp_secret"`
 	// Enrolment itself consumes a TOTP code; Teleport rejects a reused code, so the login helpers
-	// (deploy/scripts/lib/tsh-login.sh) wait for a window later than this timestamp.
+	// (deploy/teleport/scripts/lib/tsh-login.sh) wait for a window later than this timestamp.
 	EnrolledAt int64 `json:"enrolled_at"`
 }
 
 func main() {
 	users := flag.String("users", "alice,bob", "comma separated local users to enrol")
-	out := flag.String("out", "tests/.state/users.json", "credentials file to write")
+	out := flag.String("out", ".dogfood/teleport/state/users.json", "credentials file to write")
 	skipExisting := flag.Bool("skip-existing", false, "leave users that are already in the credentials file untouched")
 	force := flag.Bool("force", false, "re-enrol users even when -skip-existing is set")
 	flag.Parse()

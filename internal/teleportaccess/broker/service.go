@@ -13,9 +13,9 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/access"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/access"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport"
 )
 
 // ApprovalMode selects how approvals reach Teleport.

@@ -2,7 +2,7 @@
 # requests.sh — pretty list of access requests (all states).
 source "$(dirname "$0")/_common.sh"
 ui::section "Access requests"
-"$REPO_ROOT/deploy/scripts/tctl.sh" requests ls --format=json 2>/dev/null | python3 -c '
+"$REPO_ROOT/deploy/teleport/scripts/tctl.sh" requests ls --format=json 2>/dev/null | python3 -c '
 import json,sys,datetime
 d=json.load(sys.stdin) or []
 states={1:"PENDING",2:"APPROVED",3:"DENIED",4:"PROMOTED"}

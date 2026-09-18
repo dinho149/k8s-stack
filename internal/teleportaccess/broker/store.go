@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
 )
 
 // Record is what the broker remembers about a request (Teleport stays the source of truth).

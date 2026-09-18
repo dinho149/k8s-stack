@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as pulumi from "@pulumi/pulumi";
 import { buildProfile } from "../src/config/profile";
 
-const base = { platform: "kind" as const, kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" as const } };
+const base = { platform: "kind" as const, kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" as const } };
 
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const github = { clientId: "id", organization: "org", teamsToRoles: [{ team: "teleport-users", roles: ["requester"] }, { team: "teleport-admins", roles: ["requester", "approver", "auditor"] }] };
@@ -36,13 +36,13 @@ describe("buildProfile", () => {
   it("applies kind defaults and derives in-cluster addresses", () => {
     const p = buildProfile(base, "local");
     expect(p.clusterName).toBe("teleport.127.0.0.1.nip.io");
-    expect(p.exposure).toEqual({ type: "nodeport", nodePort: 30080 });
+    expect(p.exposure).toEqual({ type: "nodeport", nodePort: 30380 });
     expect(p.teleport.inClusterAuthAddr).toBe("teleport-cluster-auth.teleport.svc.cluster.local:3025");
     expect(p.teleport.inClusterProxyAddr).toBe("teleport.127.0.0.1.nip.io:3080");
     expect(p.teleport.insecure).toBe(true);
     expect(p.labels).toEqual({ env: "local", "managed-by": "pulumi", stack: "local" });
     expect(p.services.harness.enabled).toBe(true);
-    expect(p.tls).toEqual({ mode: "local-files", certFile: "../.state/tls/teleport.crt", keyFile: "../.state/tls/teleport.key", caFile: "../.state/tls/ca.crt" });
+    expect(p.tls).toEqual({ mode: "local-files", certFile: "../../.dogfood/teleport/tls/teleport.crt", keyFile: "../../.dogfood/teleport/tls/teleport.key", caFile: "../../.dogfood/teleport/tls/ca.crt" });
   });
 
   it("lets stack config override platform defaults", () => {
@@ -123,12 +123,12 @@ describe("invariants off the local stack", () => {
 
   it("a kind- context off kind is refused unless TELEPORT_ALLOW_KIND_CONTEXT=1", () => {
     delete process.env.TELEPORT_ALLOW_KIND_CONTEXT;
-    expect(cloud({ kubeContext: "kind-teleport-local" })).toThrow(/must not target the kind context/);
+    expect(cloud({ kubeContext: "kind-dogfood-local" })).toThrow(/must not target the kind context/);
     process.env.TELEPORT_ALLOW_KIND_CONTEXT = "1";
-    expect(cloud({ kubeContext: "kind-teleport-local" })).not.toThrow();
+    expect(cloud({ kubeContext: "kind-dogfood-local" })).not.toThrow();
     // the escape hatch also tolerates the missing GitHub client secret of a CI preview (connector is skipped), nothing else
-    expect(() => buildProfile({ ...cloudOk, kubeContext: "kind-teleport-local" }, "dev-eks", {})).not.toThrow();
-    expect(() => buildProfile({ ...cloudOk, kubeContext: "kind-teleport-local", auth: { type: "github", localAuth: true, secondFactors: ["webauthn"] } }, "dev-eks", {})).toThrow(/localAuth/);
+    expect(() => buildProfile({ ...cloudOk, kubeContext: "kind-dogfood-local" }, "dev-eks", {})).not.toThrow();
+    expect(() => buildProfile({ ...cloudOk, kubeContext: "kind-dogfood-local", auth: { type: "github", localAuth: true, secondFactors: ["webauthn"] } }, "dev-eks", {})).toThrow(/localAuth/);
   });
 
   it("the harness bot is kind-only", () => {

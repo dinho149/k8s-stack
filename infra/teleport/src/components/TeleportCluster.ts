@@ -21,7 +21,7 @@ export interface TeleportClusterArgs {
 export const PROXY_PORT = 3080;
 export const AUTH_PORT = 3025;
 /** Fixed nodePort of the in-cluster `public` port on kind, so no random node port is ever opened. */
-export const PUBLIC_NODE_PORT = 30081;
+export const PUBLIC_NODE_PORT = 30381;
 
 /** Cloud-provider annotation that makes a LoadBalancer internal (not internet-facing). */
 export function internalLoadBalancerAnnotations(platform: EnvProfile["platform"]): Record<string, string> {
@@ -55,7 +55,7 @@ export const LOCAL_TLS_MOUNT = "/etc/teleport-tls";
 export const LOCAL_TLS_SSL_CERT_DIR = `/etc/ssl/certs:${LOCAL_TLS_MOUNT}`;
 
 /**
- * Reads the PEM files of tls.mode=local-files (written by deploy/scripts/local-tls.sh). Returns undefined
+ * Reads the PEM files of tls.mode=local-files (written by deploy/teleport/scripts/local-tls.sh). Returns undefined
  * for every other mode, and — with one warning — when either file is missing, so CI and machines without
  * mkcert keep deploying with the chart's self-signed certificate.
  */
@@ -290,7 +290,7 @@ export class TeleportCluster extends pulumi.ComponentResource {
     }
 
     // kind: the mkcert certificate (make tls) becomes a kubernetes.io/tls Secret the chart mounts on the proxy.
-    // Not protected: deploy/scripts/local-tls.sh regenerates it and the chart falls back to self-signed without it.
+    // Not protected: deploy/teleport/scripts/local-tls.sh regenerates it and the chart falls back to self-signed without it.
     const localTls = readLocalTlsFiles(p);
     let tlsSecret: ClusterValuesOptions["tlsSecret"];
     if (localTls) {

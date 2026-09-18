@@ -15,9 +15,9 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/assertion"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport/fake"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/assertion"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport/fake"
 )
 
 var identityKey = []byte("mcp-test-identity-signing-key-0123456789")

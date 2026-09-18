@@ -16,9 +16,9 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/access"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/access"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport"
 )
 
 var hiddenRolePrefixes = []string{"bot-", "svc-", "wildcard-workload-identity", "terraform-provider", "operator", "list-access-request-resources", "mcp-user", "access-plugin"}

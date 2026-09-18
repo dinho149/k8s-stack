@@ -3,7 +3,7 @@
  * acting for. The chat platform's verified identity is resolved here, then bound to every request
  * with a short-lived HMAC so a shared bearer token alone can never impersonate a user.
  *
- * Wire format (shared with services/teleport-access/internal/assertion):
+ * Wire format (shared with internal/teleportaccess/assertion):
  *   X-Teleport-Assertion: <b64url(payloadJSON)>.<b64url(HMAC-SHA256(key, b64url(payloadJSON)))>
  * base64url without padding; the HMAC input is the base64url payload string, not the raw JSON.
  */

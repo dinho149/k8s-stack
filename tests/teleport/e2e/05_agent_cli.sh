@@ -15,7 +15,7 @@ done
 # the conversation runs, so a plain count can stay flat even though a request was created.
 ids() { "$TCTL" requests ls --format=json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(sorted(r["metadata"]["name"] for r in (json.load(sys.stdin) or []) if r["spec"]["user"]=="alice")))'; }
 before_ids="$(ids)"
-ui::spinner "Scripted conversation as alice" "$REPO_ROOT/deploy/scripts/agent-cli.sh" alice --script "$REPO_ROOT/tests/e2e/agent-questions.txt" || { cat "$out" 2>/dev/null; exit 1; }
+ui::spinner "Scripted conversation as alice" "$REPO_ROOT/deploy/teleport/scripts/agent-cli.sh" alice --script "$REPO_ROOT/tests/teleport/e2e/agent-questions.txt" || { cat "$out" 2>/dev/null; exit 1; }
 cp "$UI_LOG_DIR/scripted-conversation-as-alice.log" "$out" 2>/dev/null || true
 grep -qiE "requester" "$out" && ui::ok "agent reported alice's requester role" || { ui::fail "no mention of requester in the agent's answers"; tail -40 "$out"; exit 1; }
 grep -qiE "prod-db|dba" "$out" && ui::ok "agent named a role granting postgres-prod" || { ui::fail "agent did not name prod-db/dba"; tail -40 "$out"; exit 1; }

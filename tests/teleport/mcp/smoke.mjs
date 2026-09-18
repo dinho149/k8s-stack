@@ -1,6 +1,6 @@
 // MCP smoke test: connects to the in-cluster MCP server (port-forwarded) as a given Teleport user and
 // exercises the read tools. Usage:
-//   MCP_URL=http://localhost:8080/mcp MCP_SHARED_TOKEN=... node tests/mcp/smoke.mjs alice
+//   MCP_URL=http://localhost:8080/mcp MCP_SHARED_TOKEN=... node tests/teleport/mcp/smoke.mjs alice
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 

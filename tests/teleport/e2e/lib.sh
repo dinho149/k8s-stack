@@ -4,13 +4,13 @@
 set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # _common.sh owns the TLS policy (TSH_INSECURE_FLAG only for STACK=local against the kind proxy), STATE_DIR and UI_LOG_DIR.
-# shellcheck source=../../deploy/scripts/_common.sh
-source "$REPO_ROOT/deploy/scripts/_common.sh"
-# shellcheck source=../../deploy/scripts/lib/tsh-login.sh
-source "$REPO_ROOT/deploy/scripts/lib/tsh-login.sh"
-TCTL="$REPO_ROOT/deploy/scripts/tctl.sh"
+# shellcheck source=../../deploy/teleport/scripts/_common.sh
+source "$REPO_ROOT/deploy/teleport/scripts/_common.sh"
+# shellcheck source=../../deploy/teleport/scripts/lib/tsh-login.sh
+source "$REPO_ROOT/deploy/teleport/scripts/lib/tsh-login.sh"
+TCTL="$REPO_ROOT/deploy/teleport/scripts/tctl.sh"
 [[ -x "$TSH_BIN" ]] || ui::die "tsh not installed (make tsh)"
-[[ -f "$USERS_JSON" ]] || ui::die "tests/.state/users.json missing (make up, or: make seed-test-users)"
+[[ -f "$USERS_JSON" ]] || ui::die ".dogfood/teleport/state/users.json missing (make up, or: make seed-test-users)"
 
 # e2e::login <user> -> fresh TELEPORT_HOME per user (profiles never shared), headless password + TOTP login
 e2e::login() {

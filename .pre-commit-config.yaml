@@ -7,7 +7,7 @@
 # Revisions are pinned tags; bump them with `pre-commit autoupdate` (and keep .tool-versions in step).
 default_stages: [pre-commit]
 minimum_pre_commit_version: "4.0.0"
-exclude: ^(node_modules/|.*/node_modules/|infra/\.state/|tests/\.state/|tests/policy/(rendered|schemas)/|\.logs/|bin/|package-lock\.json$)
+exclude: ^(node_modules/|.*/node_modules/|infra/\.state/|tests/\.state/|tests/teleport/policy/(rendered|schemas)/|\.logs/|bin/|package-lock\.json$)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -37,7 +37,7 @@ repos:
     hooks:
       - id: shellcheck
         args: [--severity=warning, -x]
-        files: ^(deploy/scripts/.*\.sh|tests/e2e/.*\.sh)$
+        files: ^(deploy/teleport/scripts/.*\.sh|tests/teleport/e2e/.*\.sh)$
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
@@ -56,17 +56,17 @@ repos:
       - id: golangci-lint-config-verify
       # One invocation per Go module; the shared config lives at the repo root.
       - id: golangci-lint-full
-        name: golangci-lint (services/teleport-access)
-        entry: bash -c 'cd services/teleport-access && exec golangci-lint run --config=../../.golangci.yml ./...'
-        files: ^services/teleport-access/
+        name: golangci-lint (cmd/teleport-access + internal/teleportaccess)
+        entry: bash -c 'cd cmd/teleport-access + internal/teleportaccess && exec golangci-lint run --config=../../.golangci.yml ./...'
+        files: ^cmd/teleport-access + internal/teleportaccess/
       - id: golangci-lint-full
-        name: golangci-lint (tests/tools)
-        entry: bash -c 'cd tests/tools && exec golangci-lint run --config=../../.golangci.yml ./...'
-        files: ^tests/tools/
+        name: golangci-lint (tests/teleport/tools)
+        entry: bash -c 'cd tests/teleport/tools && exec golangci-lint run --config=../../.golangci.yml ./...'
+        files: ^tests/teleport/tools/
       - id: golangci-lint-full
-        name: golangci-lint (tests/integration)
-        entry: bash -c 'cd tests/integration && exec golangci-lint run --config=../../.golangci.yml --build-tags=integration ./...'
-        files: ^tests/integration/
+        name: golangci-lint (tests/teleport/integration)
+        entry: bash -c 'cd tests/teleport/integration && exec golangci-lint run --config=../../.golangci.yml --build-tags=integration ./...'
+        files: ^tests/teleport/integration/
 
   - repo: https://github.com/semgrep/pre-commit
     rev: v1.177.0
@@ -98,7 +98,7 @@ repos:
         entry: '(tsh|tctl)[^\n]*--insecure|curl[^\n]* -[a-zA-Z]*k[a-zA-Z]* '
         types: [text]
         # index.ts builds the login hint conditionally on profile.teleport.insecure (kind only).
-        exclude: ^(deploy/scripts/_common\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
+        exclude: ^(deploy/teleport/scripts/_common\.sh|infra/teleport/index\.ts|\.pre-commit-config\.yaml|\.semgrep\.yml|docs/.*\.md)$
       - id: npm-typecheck
         name: npm run typecheck (workspaces)
         language: system

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # local-tls.sh — browser-trusted certificate for the kind proxy via mkcert (STACK=local only).
 #
-# Writes infra/.state/tls/teleport.{crt,key} (gitignored) for teleport.127.0.0.1.nip.io and
+# Writes .dogfood/teleport/tls/teleport.{crt,key} (gitignored) for teleport.127.0.0.1.nip.io and
 # *.teleport.127.0.0.1.nip.io; Pulumi mounts them as Secret teleport-local-tls (tls.mode=local-files).
 # Optional. LOCAL_TLS=ask (default): one question on the first `make up`, the answer is remembered
-# (infra/.state/tls/.skipped). LOCAL_TLS=0: never. LOCAL_TLS=1 (what `make tls` uses): yes, without asking.
+# (.dogfood/teleport/tls/.skipped). LOCAL_TLS=0: never. LOCAL_TLS=1 (what `make tls` uses): yes, without asking.
 # Without mkcert, or without a terminal to ask for consent, the proxy keeps its self-signed certificate.
 # Never installs packages or touches the trust store unless a person on a real terminal said yes.
 source "$(dirname "$0")/_common.sh"
@@ -46,7 +46,7 @@ cert_ok() {
 }
 
 if command -v mkcert >/dev/null 2>&1 && common::mkcert_ca_trusted && cert_ok; then
-  ui::ok "TLS: infra/.state/tls/teleport.crt covers $host and *.$host, signed by the trusted mkcert CA"
+  ui::ok "TLS: .dogfood/teleport/tls/teleport.crt covers $host and *.$host, signed by the trusted mkcert CA"
   exit 0
 fi
 if ! consent; then
@@ -63,11 +63,11 @@ if ! common::mkcert_ca_trusted; then
   mkcert -install || ui::die "mkcert -install failed"
 fi
 if cert_ok; then
-  ui::ok "TLS: infra/.state/tls/teleport.crt covers $host and *.$host, signed by the trusted mkcert CA"
+  ui::ok "TLS: .dogfood/teleport/tls/teleport.crt covers $host and *.$host, signed by the trusted mkcert CA"
   exit 0
 fi
 umask 077; mkdir -p "$LOCAL_TLS_DIR"
 ui::spinner "Generating a certificate for $host and *.$host" mkcert -cert-file "$crt" -key-file "$key" "$host" "*.$host"
 # The proxy verifies its own chain at startup, so Pulumi ships the issuing root alongside the leaf.
 cp "$(mkcert -CAROOT)/rootCA.pem" "$ca"; chmod 0600 "$ca"
-ui::kv "certificate" "infra/.state/tls/teleport.crt + ca.crt (gitignored; Pulumi mounts them as Secret teleport-local-tls)"
+ui::kv "certificate" ".dogfood/teleport/tls/teleport.crt + ca.crt (gitignored; Pulumi mounts them as Secret teleport-local-tls)"

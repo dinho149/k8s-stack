@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pulumi-run.sh — `pulumi up` / `pulumi destroy` with a one-line live progress display instead of the raw
 # event stream. Failures are printed as they happen, the run ends with Pulumi's own resource summary, and
-# the full stream is kept in .logs/pulumi-<cmd>-<stack>.log (plus the Diagnostics block on failure).
+# the full stream is kept in .dogfood/logs/teleport/pulumi-<cmd>-<stack>.log (plus the Diagnostics block on failure).
 #
 #   pulumi-run.sh up|destroy <stack> [extra pulumi args...]
 #   PULUMI_RUN_REPLAY=<log> pulumi-run.sh up <stack>     # render a saved log instead of running pulumi (tests)
@@ -77,7 +77,7 @@ summary() {   # one line from the "Resources:" block of the log, e.g. "+32 creat
 }
 duration() { awk '/^Duration:/{print $2}' "$log"; }
 
-ui::step "$label ${UI_DIM}(full log: .logs/pulumi-$cmd-$stack.log)${UI_RESET}"
+ui::step "$label ${UI_DIM}(full log: .dogfood/logs/teleport/pulumi-$cmd-$stack.log)${UI_RESET}"
 rc=0
 if [[ -n "${PULUMI_RUN_REPLAY:-}" ]]; then
   sed 's/\x1b\[[0-9;]*m//g' "$PULUMI_RUN_REPLAY" | tee "$log" | render
@@ -93,6 +93,6 @@ else
   ui::fail "$label failed: ${s:-see log}${d:+ (after $d)}"
   # Pulumi's own Diagnostics block is the useful part: show it, indented, then the log path.
   awk '/^Diagnostics:/{p=1} /^(Outputs|Resources):/{p=0} p' "$log" | sed 's/^/    /' | head -60
-  ui::info "full log: .logs/pulumi-$cmd-$stack.log"
+  ui::info "full log: .dogfood/logs/teleport/pulumi-$cmd-$stack.log"
 fi
 exit "$rc"

@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { internalLoadBalancerAnnotations, readLocalTlsFiles, renderClusterValues } from "../src/components/TeleportCluster";
 
-const kind = buildProfile({ platform: "kind", kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" } }, "local");
+const kind = buildProfile({ platform: "kind", kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" } }, "local");
 const github = { clientId: "id", organization: "org", teamsToRoles: [{ team: "eng", roles: ["requester"] }] };
 const cloudSecrets = { githubClientSecret: pulumi.secret("s") };
 const cloudBase = {
@@ -150,16 +150,16 @@ describe("local-files TLS (mkcert on kind)", () => {
     expect(readLocalTlsFiles(kind, dir, warn)).toBeUndefined();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/make tls/);
-    fs.mkdirSync(path.join(dir, ".state", "tls"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".state", "tls", "teleport.crt"), "CERT");
-    fs.writeFileSync(path.join(dir, ".state", "tls", "teleport.key"), "KEY");
-    // kind default paths are relative to infra/teleport: "../.state/tls/..." resolves against projectRoot/..
-    const project = path.join(dir, "teleport");
-    fs.mkdirSync(project);
+    fs.mkdirSync(path.join(dir, ".dogfood", "teleport", "tls"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".dogfood", "teleport", "tls", "teleport.crt"), "CERT");
+    fs.writeFileSync(path.join(dir, ".dogfood", "teleport", "tls", "teleport.key"), "KEY");
+    // kind default paths are relative to infra/teleport: "../../.dogfood/teleport/tls/..." resolves against projectRoot/../..
+    const project = path.join(dir, "infra", "teleport");
+    fs.mkdirSync(project, { recursive: true });
     expect(readLocalTlsFiles(kind, project, warn)).toBeUndefined(); // ca.crt still missing
     expect(warnings).toHaveLength(2);
     expect(warnings[1]).toMatch(/ca\.crt/);
-    fs.writeFileSync(path.join(dir, ".state", "tls", "ca.crt"), "CA");
+    fs.writeFileSync(path.join(dir, ".dogfood", "teleport", "tls", "ca.crt"), "CA");
     const got = readLocalTlsFiles(kind, project, warn);
     expect(got).toMatchObject({ cert: "CERT", key: "KEY", ca: "CA" });
     expect(got?.checksum).toMatch(/^[0-9a-f]{64}$/);

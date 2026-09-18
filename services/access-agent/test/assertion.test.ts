@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { ASSERTION_TTL_SECONDS, AssertionError, buildPayload, mintAssertion, verifyAssertion } from "../src/identity/assertion.js";
 
-/** Fixed vector shared with the Go verifier (services/teleport-access/internal/assertion). */
+/** Fixed vector shared with the Go verifier (internal/teleportaccess/assertion). */
 export const VECTOR = {
   key: "0123456789abcdef0123456789abcdef", // gitleaks:allow (fixed test vector, not a credential)
   principal: { teleportUser: "alice", email: "alice@example.com", platform: "slack" as const, platformUserId: "U0123ABC" },

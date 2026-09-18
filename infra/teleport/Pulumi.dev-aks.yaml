@@ -1,7 +1,7 @@
 # dev-aks: Teleport on an EXISTING aks cluster reached through kubeContext.
 #
 # Scaffold: passes `make preview STACK=dev-aks` (optionally against the kind context with
-#   make preview STACK=dev-aks PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local")
+#   make preview STACK=dev-aks PULUMI_ARGS="--config teleport:kubeContext=kind-dogfood-local")
 # Before a real deploy: set kubeContext, clusterName/publicAddr (a DNS name you control), a cert-manager
 # ClusterIssuer or ACME email, GitHub SSO secrets (make github-sso STACK=dev-aks), images.registry,
 # and chartMode (aws/gcp/azure) once the managed backends exist.
@@ -9,7 +9,7 @@ config:
   teleport:env: dev
   teleport:platform: aks
   # CI previews render against the kind context with TELEPORT_ALLOW_KIND_CONTEXT=1; a real deploy must set a cloud context.
-  teleport:kubeContext: kind-teleport-local
+  teleport:kubeContext: kind-dogfood-local
   teleport:clusterName: teleport.dev.example.com
   teleport:publicAddr: teleport.dev.example.com:443
   teleport:version: "18.11.1"

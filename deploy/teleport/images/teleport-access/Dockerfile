@@ -1,5 +1,8 @@
 # teleport-access: MCP server + access broker (one binary, subcommands)
 #
+# Build context is the REPOSITORY ROOT (the code lives in the root Go module):
+#   docker build -f deploy/teleport/images/teleport-access/Dockerfile -t dogfood/teleport-access .
+#
 # Build stage: the official Go 1.26 image (Chainguard's free `go:latest` tracks Go 1.27, whose unicode
 # tables no longer match the pinned golang.org/x/text and the binary panics at start-up; a version-matched
 # Chainguard tag needs a paid registry). Runtime: Chainguard static (no shell, no package manager, nonroot).
@@ -9,7 +12,8 @@ FROM docker.io/library/golang:1.26.7-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
+COPY cmd ./cmd
+COPY internal ./internal
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/teleport-access ./cmd/teleport-access
 

@@ -13,13 +13,13 @@ if [[ -n "$ping" ]]; then ui::status ok "teleport" "$(printf '%s' "$ping" | pyth
 ui::section "Pods"
 rows=("NAMESPACE|POD|READY|STATUS|RESTARTS|AGE")
 for ns in teleport teleport-agent teleport-dummies teleport-access; do
-  while IFS= read -r line; do [[ -n "$line" ]] && rows+=("$line"); done < <($KUBECTL -n "$ns" get pods -o json 2>/dev/null | python3 "$REPO_ROOT/deploy/scripts/lib/pods.py" "$UI_OK" "$UI_BAD")
+  while IFS= read -r line; do [[ -n "$line" ]] && rows+=("$line"); done < <($KUBECTL -n "$ns" get pods -o json 2>/dev/null | python3 "$REPO_ROOT/deploy/teleport/scripts/lib/pods.py" "$UI_OK" "$UI_BAD")
 done
 (( ${#rows[@]} > 1 )) && ui::table "${rows[@]}" || ui::info "no pods yet"
 
 if [[ -n "$ping" ]] && $KUBECTL -n "$TELEPORT_NAMESPACE" get pods -l app.kubernetes.io/component=auth --no-headers 2>/dev/null | grep -q Running; then
   ui::section "Teleport inventory"
-  T="$REPO_ROOT/deploy/scripts/tctl.sh"
+  T="$REPO_ROOT/deploy/teleport/scripts/tctl.sh"
   ui::kv "nodes"     "$($T nodes ls --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted(set(n["spec"]["hostname"] for n in d))) or "none")' 2>/dev/null || echo '?')"
   ui::kv "databases" "$($T get db --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted(x["metadata"]["name"] for x in d)) or "none")' 2>/dev/null || echo '?')"
   ui::kv "apps"      "$($T get app --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted(x["metadata"]["name"] for x in d)) or "none")' 2>/dev/null || echo '?')"

@@ -16,9 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/gravitational/teleport/api/types"
 
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/assertion"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/policy"
-	"github.com/dinho/k8s-teleport/services/teleport-access/internal/teleport/fake"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/assertion"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport/fake"
 )
 
 const testPolicy = `

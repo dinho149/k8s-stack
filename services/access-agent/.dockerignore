@@ -9,5 +9,5 @@ coverage
 identity*
 .env*
 .logs
-tests/.state
+.dogfood
 *.tsbuildinfo

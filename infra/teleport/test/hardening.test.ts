@@ -10,7 +10,7 @@ import { kubeAgentEnvs, kubeAgentReleaseName, renderKubeAgentValues } from "../s
 import { hardenedContainerSecurityContext, hardenedPodSecurityContext } from "../src/lib/security";
 import { namespaceLabels } from "../src/lib/labels";
 
-const kind = buildProfile({ platform: "kind", kubeContext: "kind-teleport-local", version: "18.11.1", auth: { type: "local" } }, "local");
+const kind = buildProfile({ platform: "kind", kubeContext: "kind-dogfood-local", version: "18.11.1", auth: { type: "local" } }, "local");
 const github = { clientId: "id", organization: "org", teamsToRoles: [{ team: "eng", roles: ["requester"] }] };
 const cloud = (extra: Record<string, unknown> = {}) =>
   buildProfile(
