@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig, resolveSecretFiles } from "../src/config/schema.js";
 
-const KEY = "0123456789abcdef0123456789abcdef";
+const KEY = "0123456789abcdef0123456789abcdef"; // gitleaks:allow (fixed test vector, not a credential)
 const base = { MCP_SHARED_TOKEN: "t", IDENTITY_SIGNING_KEY: KEY };
 const slack = { ...base, ANTHROPIC_API_KEY: "k", ADAPTERS: "slack", SLACK_BOT_TOKEN: "xoxb", SLACK_APP_TOKEN: "xapp", SLACK_ALLOWED_TEAM_IDS: "T1", ALLOWED_EMAIL_DOMAINS: "example.com" };
 

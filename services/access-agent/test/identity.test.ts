@@ -3,7 +3,7 @@ import { IdentityResolver } from "../src/identity/resolver.js";
 import { ConfigSchema } from "../src/config/schema.js";
 import type { BrokerClient } from "../src/broker/client.js";
 
-const KEY = "0123456789abcdef0123456789abcdef";
+const KEY = "0123456789abcdef0123456789abcdef"; // gitleaks:allow (fixed test vector, not a credential)
 const base = ConfigSchema.parse({ ANTHROPIC_API_KEY: "k", MCP_SHARED_TOKEN: "t", IDENTITY_SIGNING_KEY: KEY, ALLOWED_EMAIL_DOMAINS: "example.com" });
 const slackUser = (email: string | null, verified = true) => ({ platform: "slack" as const, platformUserId: "U1", displayName: "x", email, emailVerified: verified });
 

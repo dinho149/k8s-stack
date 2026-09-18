@@ -4,7 +4,7 @@ import { ASSERTION_TTL_SECONDS, AssertionError, buildPayload, mintAssertion, ver
 
 /** Fixed vector shared with the Go verifier (services/teleport-access/internal/assertion). */
 export const VECTOR = {
-  key: "0123456789abcdef0123456789abcdef",
+  key: "0123456789abcdef0123456789abcdef", // gitleaks:allow (fixed test vector, not a credential)
   principal: { teleportUser: "alice", email: "alice@example.com", platform: "slack" as const, platformUserId: "U0123ABC" },
   nowMs: 1_700_000_000_000,
   jti: "00000000-0000-4000-8000-000000000000",
