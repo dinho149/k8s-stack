@@ -16,6 +16,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dinho/k8s-teleport/services/teleport-access/internal/httpx"
+
 	"github.com/dinho/k8s-teleport/services/teleport-access/internal/assertion"
 )
 
@@ -115,7 +117,7 @@ func BearerAuth(o AuthOptions, next http.Handler) http.Handler {
 		}
 		if sid := r.Header.Get(sessionIDHeader); sid != "" {
 			if err := binder.bind(sid, claims.Sub); err != nil {
-				o.Log.Warn("session identity mismatch", "session", sid, "sub", claims.Sub, "err", err)
+				o.Log.Warn("session identity mismatch", "session", httpx.LogSafe(sid), "sub", httpx.LogSafe(claims.Sub), "err", err)
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 				return
 			}

@@ -167,4 +167,3 @@ rules:
     severity: ERROR
     message: Base images must be pinned by digest (FROM image:tag@sha256:...). Dependabot refreshes the digest.
     pattern-regex: '^FROM\s+(?!.*@sha256:)(?!\$)(?![A-Za-z0-9_-]+\s*$)\S+'
-

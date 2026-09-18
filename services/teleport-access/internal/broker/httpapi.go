@@ -82,7 +82,7 @@ func (s *Service) Handler(apiToken string, identityKey []byte) http.Handler {
 		return func(w http.ResponseWriter, r *http.Request) {
 			claims, err := verifier.Verify(r.Header.Get(assertion.Header))
 			if err != nil {
-				s.Log.Warn("approver assertion rejected", "path", r.URL.Path, "err", err)
+				s.Log.Warn("approver assertion rejected", "route", r.Pattern, "err", err)
 				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "missing or invalid identity assertion")
 				return
 			}
@@ -208,10 +208,10 @@ func (s *Service) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	case trace.IsAccessDenied(err):
 		httpx.Error(w, http.StatusForbidden, "teleport_denied", trace.UserMessage(err))
 	case errors.Is(err, context.DeadlineExceeded):
-		s.Log.Error("teleport call timed out", "path", r.URL.Path, "err", err)
+		s.Log.Error("teleport call timed out", "route", r.Pattern, "err", err)
 		httpx.Error(w, http.StatusGatewayTimeout, "teleport_timeout", "teleport did not answer in time")
 	default:
-		s.Log.Error("teleport call failed", "path", r.URL.Path, "err", err)
+		s.Log.Error("teleport call failed", "route", r.Pattern, "err", err)
 		httpx.Error(w, http.StatusBadGateway, "teleport_error", "teleport error")
 	}
 }

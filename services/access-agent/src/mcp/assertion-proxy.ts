@@ -38,9 +38,12 @@ const STRIP_RESPONSE_HEADERS = new Set(["connection", "keep-alive", "transfer-en
 
 function bearerMatches(header: string | undefined, token: string): boolean {
   if (!header) return false;
-  const m = /^Bearer\s+(.+)$/i.exec(header.trim());
-  if (!m) return false;
-  const a = Buffer.from(m[1]);
+  const h = header.trim();
+  // linear-time parse: "Bearer" + at least one space + token (no regex with nested quantifiers)
+  if (h.length < 8 || h.slice(0, 7).toLowerCase() !== "bearer ") return false;
+  const presented = h.slice(7).trim();
+  if (!presented) return false;
+  const a = Buffer.from(presented);
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);
 }

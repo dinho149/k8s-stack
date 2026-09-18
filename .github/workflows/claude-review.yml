@@ -14,9 +14,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  preflight:
+    # `secrets` cannot be read in a job-level `if`, so expose its presence as an output: without the key the
+    # review is skipped (neutral), not failed. Add the ANTHROPIC_API_KEY repository secret to turn it on.
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      has_key: ${{ steps.check.outputs.has_key }}
+    steps:
+      - id: check
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: echo "has_key=$HAS_KEY" >> "$GITHUB_OUTPUT"
   claude-review:
     name: claude-review
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    needs: preflight
+    if: needs.preflight.outputs.has_key == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

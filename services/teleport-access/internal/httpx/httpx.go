@@ -44,6 +44,24 @@ func Error(w http.ResponseWriter, status int, code, msg string) {
 	JSON(w, status, map[string]string{"error": msg, "code": code})
 }
 
+// LogSafe makes a client-supplied string safe for structured logs: control characters (including newlines,
+// which would let a client forge log records) become '?', and the value is capped at 128 runes.
+func LogSafe(s string) string {
+	const max = 128
+	out := make([]rune, 0, min(len(s), max))
+	for _, r := range s {
+		if len(out) >= max {
+			out = append(out, '…')
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			r = '?'
+		}
+		out = append(out, r)
+	}
+	return string(out)
+}
+
 // DecodeJSON reads at most max bytes of r.Body into v, rejecting unknown fields and trailing data.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, max int64, v any) error {
 	body := http.MaxBytesReader(w, r.Body, max)

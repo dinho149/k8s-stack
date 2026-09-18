@@ -9,6 +9,7 @@
  * on the internet-facing port, and the chat webhooks are not reachable on the internal one.
  */
 import Fastify, { type FastifyInstance } from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import type { ChatAdapter } from "../adapters/types.js";
 import type { WebhookVerifier, BrokerEvent } from "../broker/webhook.js";
 import type { Logger } from "../observability/logger.js";
@@ -24,9 +25,14 @@ export interface ServerDeps {
 }
 
 export const BODY_LIMIT = 256 * 1024;
+export const RATE_LIMIT_MAX = 120;
+export const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export function buildServer(deps: ServerDeps, surface: HttpSurface = "all"): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: BODY_LIMIT });
+  // Per-client rate limit on every surface: chat webhooks are internet-facing on the public listener and the
+  // broker webhook / readiness probe must not be an amplification vector. Health checks stay exempt.
+  void app.register(rateLimit, { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WINDOW_MS, allowList: (req) => req.url === "/healthz" });
   // keep raw bodies for signature verification; only JSON objects are accepted as event bodies
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
     try {
