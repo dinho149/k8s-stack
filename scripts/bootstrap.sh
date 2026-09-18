@@ -11,7 +11,7 @@ if [[ "$DOGFOOD_PROVIDER" == kind ]]; then
     kind create cluster --name "$DOGFOOD_NAME" --image kindest/node:v1.34.0 --config "$ROOT/deploy/kind/config.yaml" --wait 0s
   fi
   kind export kubeconfig --name "$DOGFOOD_NAME"
-  h upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.18.3 --namespace kube-system --set operator.replicas=1 --set ipam.mode=kubernetes --set kubeProxyReplacement=false --wait --timeout 5m
+  h upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.18.3 --namespace kube-system --set operator.replicas=1 --set ipam.mode=kubernetes --set kubeProxyReplacement=false --set policyCIDRMatchMode=nodes --wait --timeout 5m
 fi
 k wait --for=condition=Ready nodes --all --timeout=180s
 cluster_ready=$(date +%s)

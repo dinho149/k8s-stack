@@ -18,7 +18,7 @@ TARGETS := help help-all setup doctor up open status logs stop restart down rese
  teleport-login teleport-web-login teleport-tctl teleport-requests teleport-approve teleport-deny teleport-agent-cli \
  teleport-logs teleport-port-forward teleport-tls teleport-github-sso teleport-claude-token teleport-tsh teleport-images \
  teleport-bootstrap-users teleport-bootstrap-admin teleport-seed-test-users teleport-render teleport-test \
- teleport-test-integration teleport-test-e2e teleport-hooks teleport-secrets-guard
+ teleport-test-integration teleport-test-e2e teleport-hooks teleport-secrets-guard teleport-wait
 
 .PHONY: $(TARGETS)
 $(TARGETS):
