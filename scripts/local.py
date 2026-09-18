@@ -22,12 +22,12 @@ import urllib.request
 import webbrowser
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE = ROOT / '.stack'
+STATE = ROOT / '.dogfood'
 LOGS = STATE / 'logs'
 ENV = {key: value for key, value in os.environ.items() if value}
 COLOR = sys.stdout.isatty() and 'NO_COLOR' not in os.environ and ENV.get('TERM') != 'dumb'
 SERVICES = {
-    'api': (8088, ['bin/stack', 'serve'], ROOT),
+    'api': (8088, ['bin/dogfood', 'serve'], ROOT),
     'backend': (7007, ['../../node_modules/.bin/tsx', 'src/index.ts', '--config', '../../app-config.local.yaml'], ROOT / 'packages/backend'),
     'portal': (3000, ['../../node_modules/.bin/vite', '--host', '127.0.0.1', '--strictPort'], ROOT / 'packages/portal'),
     'agent': (8090, ['node_modules/.bin/tsx', 'services/agent/src/server.ts'], ROOT),
@@ -35,7 +35,7 @@ SERVICES = {
 CHILDREN = {}
 GROUPS = {
     'Start here': {'help': 'Show commands and examples', 'setup': 'Install project dependencies and Chromium', 'doctor': 'Check local prerequisites', 'up': 'Start the complete local stack in the background', 'open': 'Open the portal'},
-    'Manage services': {'status': 'Show health and URLs', 'logs': 'Follow logs [SERVICE=all|api|backend|portal|agent|database|registry]', 'stop': 'Stop app services, preserving the cluster', 'restart': 'Restart app services', 'down': 'Delete previews and local cluster; retain database/registry data', 'reset': 'Delete all local data CONFIRM=stack-local', 'clean': 'Remove build and test artifacts', 'local': 'Bootstrap only the local cluster', 'portal': 'Run the frontend in the foreground', 'agent': 'Start the optional agent', 'agent-stop': 'Stop the agent'},
+    'Manage services': {'status': 'Show health and URLs', 'logs': 'Follow logs [SERVICE=all|api|backend|portal|agent|database|registry]', 'stop': 'Stop app services, preserving the cluster', 'restart': 'Restart app services', 'down': 'Delete previews and local cluster; retain database/registry data', 'reset': 'Delete all local data CONFIRM=dogfood-local', 'clean': 'Remove build and test artifacts', 'local': 'Bootstrap only the local cluster', 'portal': 'Run the frontend in the foreground', 'agent': 'Start the optional agent', 'agent-stop': 'Stop the agent'},
     'Previews': {'sample-build': 'Build and record the sample image digest', 'preview-up': 'Create preview NAME=demo [IMAGE=… REVISION=…]', 'preview-status': 'List previews or inspect NAME=demo', 'preview-down': 'Request deletion NAME=demo [CONFIRMATION=…]', 'preview-retry': 'Redeploy NAME=demo [IMAGE=… REVISION=…]', 'preview-extend': 'Extend NAME=demo MINUTES=30', 'preview-diagnostics': 'Inspect Kubernetes diagnostics NAME=demo'},
     'Checks': {'build': 'Build Go and npm workspaces', 'typecheck': 'Check TypeScript', 'format': 'Format source and infrastructure', 'format-check': 'Check source and infrastructure formatting', 'lint': 'Check formatting, Go, TypeScript and shell syntax', 'test-fast': 'Run Go, agent, orchestration and portal tests', 'test-scoped': 'Run the test lane', 'test': 'Run lint, tests and Helm checks', 'ship-gate': 'Run all CI checks and builds', 'test-portal': 'Run browser tests', 'test-agent': 'Run agent unit tests', 'test-local': 'Run local orchestration tests', 'browser-install': 'Install Chromium [WITH_DEPS=1]', 'audit': 'Audit npm dependencies', 'infra-validate': 'Validate all OpenTofu modules'},
     'Optional tools': {'catalog-check': 'Resolve pinned charts', 'catalog-sync': 'Install catalog REPOSITORY=https://…', 'tool-routes': 'Install routes [TOOLS=argocd,grafana,keycloak]', 'benchmark': 'Measure previews [RUNS=30 CONCURRENCY=5]', 'benchmark-report': 'Summarize measurements', 'test-isolation': 'Check isolation between two running previews'},
@@ -63,7 +63,7 @@ def rule():
 
 def heading(title, subtitle=''):
     print()
-    print('  ' + ink('▰', 'accent') + ink(' STACK', 'bright') + ink('  /  ') + title)
+    print('  ' + ink('▰', 'accent') + ink(' DOGFOOD', 'bright') + ink('  /  ') + title)
     if subtitle:
         for line in textwrap.wrap(subtitle, width() - 2):
             print('    ' + ink(line))
@@ -219,12 +219,12 @@ def locked():
 
 def credentials(create=False):
     path = STATE / 'local.env'
-    if create and not path.exists() and shutil.which('docker') and container('stack-backstage-db'):
-        raise RuntimeError('Database exists but .stack/local.env is missing. Restore the credentials or run make reset CONFIRM=stack-local.')
+    if create and not path.exists() and shutil.which('docker') and container('dogfood-backstage-db'):
+        raise RuntimeError('Database exists but .dogfood/local.env is missing. Restore the credentials or run make reset CONFIRM=dogfood-local.')
     if create and not path.exists():
         STATE.mkdir(exist_ok=True)
         with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as out:
-            for key in ('STACK_LOCAL_TOKEN', 'STACK_SERVICE_TOKEN', 'BACKSTAGE_DB_PASSWORD'):
+            for key in ('DOGFOOD_LOCAL_TOKEN', 'DOGFOOD_SERVICE_TOKEN', 'BACKSTAGE_DB_PASSWORD'):
                 out.write(f'export {key}={secrets.token_hex(32)}\n')
     for file in (ROOT / '.env', path):
         if not file.exists():
@@ -243,26 +243,26 @@ def credentials(create=False):
             ENV[key] = value
     if path.exists():
         path.chmod(0o600)
-    ENV.pop('STACK_TOKEN', None)
-    ENV.update(STACK_API_URL='http://127.0.0.1:8088', STACK_LOCAL_DEVELOPMENT='1', NODE_ENV='development', VITE_LOCAL_DEVELOPMENT='true', STACK_CONTEXT='kind-stack-local', STACK_NAME='stack-local', STACK_PROFILE='local')
+    ENV.pop('DOGFOOD_TOKEN', None)
+    ENV.update(DOGFOOD_API_URL='http://127.0.0.1:8088', DOGFOOD_LOCAL_DEVELOPMENT='1', NODE_ENV='development', VITE_LOCAL_DEVELOPMENT='true', DOGFOOD_CONTEXT='kind-dogfood-local', DOGFOOD_NAME='dogfood-local', DOGFOOD_PROFILE='local')
     if ENV.get('BACKSTAGE_DB_PASSWORD'):
-        ENV['BACKSTAGE_DATABASE_URL'] = 'postgresql://stack:' + ENV['BACKSTAGE_DB_PASSWORD'] + '@127.0.0.1:15432/backstage'
+        ENV['BACKSTAGE_DATABASE_URL'] = 'postgresql://dogfood:' + ENV['BACKSTAGE_DB_PASSWORD'] + '@127.0.0.1:15432/backstage'
         ENV['POSTGRES_PASSWORD'] = ENV['BACKSTAGE_DB_PASSWORD']
 
 
 def build_cli():
-    binary = ROOT / 'bin/stack'
+    binary = ROOT / 'bin/dogfood'
     sources = list((ROOT / 'cmd').rglob('*.go')) + list((ROOT / 'internal').rglob('*.go')) + [ROOT / 'go.mod', ROOT / 'go.sum']
     if not binary.exists() or any(p.stat().st_mtime > binary.stat().st_mtime for p in sources):
-        run('Build lifecycle CLI', ['go', 'build', '-o', 'bin/stack', './cmd/stack'])
+        run('Build lifecycle CLI', ['go', 'build', '-o', 'bin/dogfood', './cmd/dogfood'])
 
 
 def local_config():
     build_cli()
-    config = json.loads(capture(['bin/stack', 'config']))
-    expected = {'provider': 'kind', 'profile': 'local', 'name': 'stack-local', 'context': 'kind-stack-local', 'listen': '127.0.0.1:8088', 'statePath': '.stack/state.db'}
+    config = json.loads(capture(['bin/dogfood', 'config']))
+    expected = {'provider': 'kind', 'profile': 'local', 'name': 'dogfood-local', 'context': 'kind-dogfood-local', 'listen': '127.0.0.1:8088', 'statePath': '.dogfood/state.db'}
     if any(config.get(key) != value for key, value in expected.items()):
-        raise RuntimeError('Local Make commands require the default stack-local configuration. Restore the local settings in platform.yaml; cloud operations use their deployment workflow.')
+        raise RuntimeError('Local Make commands require the default dogfood-local configuration. Restore the local settings in platform.yaml; cloud operations use their deployment workflow.')
     return config
 
 
@@ -345,12 +345,12 @@ def doctor():
         if port_busy(port) and not alive(name):
             failed.append(f'Port {port} is occupied by an untracked process ({name}); stop it before make up')
     if shutil.which('docker') and not any('Docker is unavailable' in error for error in failed):
-        for name, port in (('stack-backstage-db', 15432), ('stack-registry', 5005)):
+        for name, port in (('dogfood-backstage-db', 15432), ('dogfood-registry', 5005)):
             info = owned(name)
             if port_busy(port) and not (info and info['State']['Running']):
                 failed.append(f'Port {port} is occupied; free it before make up')
         clusters = capture(['kind', 'get', 'clusters']).splitlines() if shutil.which('kind') else []
-        if 'stack-local' not in clusters:
+        if 'dogfood-local' not in clusters:
             for port in (18080, 18443):
                 if port_busy(port):
                     failed.append(f'Gateway port {port} is occupied; free it before make up')
@@ -392,22 +392,22 @@ def container(name):
 
 def owned(name):
     info = container(name)
-    if info and (info['Config'].get('Labels') or {}).get('stack.platform/managed') != 'true':
+    if info and (info['Config'].get('Labels') or {}).get('dogfood.platform/managed') != 'true':
         raise RuntimeError(f'Refusing unmanaged container {name}. Rename it before retrying.')
     return info
 
 
 def database():
-    if owned('stack-backstage-db'):
-        run('Start database', ['docker', 'start', 'stack-backstage-db'])
+    if owned('dogfood-backstage-db'):
+        run('Start database', ['docker', 'start', 'dogfood-backstage-db'])
     else:
         if port_busy(15432):
             raise RuntimeError('Database port 15432 is occupied.')
-        run('Create database', ['docker', 'run', '-d', '--name', 'stack-backstage-db', '--label', 'stack.platform/managed=true', '-p', '127.0.0.1:15432:5432', '-e', 'POSTGRES_USER=stack', '-e', 'POSTGRES_DB=backstage', '-e', 'POSTGRES_PASSWORD', 'postgres:16-alpine'])
+        run('Create database', ['docker', 'run', '-d', '--name', 'dogfood-backstage-db', '--label', 'dogfood.platform/managed=true', '-p', '127.0.0.1:15432:5432', '-e', 'POSTGRES_USER=dogfood', '-e', 'POSTGRES_DB=backstage', '-e', 'POSTGRES_PASSWORD', 'postgres:16-alpine'])
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         try:
-            capture(['docker', 'exec', 'stack-backstage-db', 'pg_isready', '-U', 'stack'])
+            capture(['docker', 'exec', 'dogfood-backstage-db', 'pg_isready', '-U', 'dogfood'])
             return
         except subprocess.CalledProcessError:
             time.sleep(1)
@@ -479,25 +479,25 @@ def app_start():
 
 def bootstrap():
     local_config()
-    run('Bootstrap local cluster', ['bin/stack', 'up', '--bootstrap'])
+    run('Bootstrap local cluster', ['bin/dogfood', 'up', '--bootstrap'])
 
 
 def sample_build():
     local_config()
     # Script stdout is a machine-readable digest; progress stays in its log.
-    run('Build sample image', ['bash', '-c', 'bash scripts/build-sample.sh > .stack/sample-image.tmp'])
+    run('Build sample image', ['bash', '-c', 'bash scripts/build-sample.sh > .dogfood/sample-image.tmp'])
     digest = (STATE / 'sample-image.tmp').read_text().strip()
     if not re.fullmatch(r'\S+@sha256:[a-f0-9]{64}', digest):
-        raise RuntimeError('Sample build did not produce an immutable digest; see .stack/logs/build-sample-image.log')
+        raise RuntimeError('Sample build did not produce an immutable digest; see .dogfood/logs/build-sample-image.log')
     (STATE / 'sample-image.tmp').replace(STATE / 'sample-image.txt')
 
 
 def request(path, body=None):
-    token = ENV.get('STACK_LOCAL_TOKEN')
+    token = ENV.get('DOGFOOD_LOCAL_TOKEN')
     if not token:
         raise RuntimeError('Local credentials missing. Run make up first.')
     headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Idempotency-Key': secrets.token_hex(16)}
-    req = urllib.request.Request(ENV['STACK_API_URL'] + '/v1/' + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
+    req = urllib.request.Request(ENV['DOGFOOD_API_URL'] + '/v1/' + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as response:
             return json.load(response)
@@ -574,15 +574,15 @@ def preview(command):
 
 def down(reset=False):
     local_config()
-    if reset and ENV.get('CONFIRM') != 'stack-local':
-        raise RuntimeError('Reset deletes the cluster, database, registry, credentials and local state. Run make reset CONFIRM=stack-local.')
+    if reset and ENV.get('CONFIRM') != 'dogfood-local':
+        raise RuntimeError('Reset deletes the cluster, database, registry, credentials and local state. Run make reset CONFIRM=dogfood-local.')
     for service, (port, _, _) in SERVICES.items():
         if port_busy(port) and not alive(service):
             raise RuntimeError(f'Port {port} belongs to an untracked {service} process. Stop its original session before make down or make reset.')
-    for name in ('stack-backstage-db', 'stack-registry'):
+    for name in ('dogfood-backstage-db', 'dogfood-registry'):
         owned(name)
     clusters = capture(['kind', 'get', 'clusters']).splitlines()
-    if 'stack-local' in clusters and not reset:
+    if 'dogfood-local' in clusters and not reset:
         credentials(create=False)
         started = False
         if not alive('api'):
@@ -597,14 +597,14 @@ def down(reset=False):
         except BaseException:
             if started:
                 stop_service('api')
-            raise RuntimeError('Preview cleanup failed; cluster retained. Run make up, inspect make preview-status, then retry make down. To discard all local data use make reset CONFIRM=stack-local.')
+            raise RuntimeError('Preview cleanup failed; cluster retained. Run make up, inspect make preview-status, then retry make down. To discard all local data use make reset CONFIRM=dogfood-local.')
     for service in reversed(SERVICES):
         stop_service(service)
-    for name in ('stack-backstage-db', 'stack-registry'):
+    for name in ('dogfood-backstage-db', 'dogfood-registry'):
         if owned(name):
             run(('Remove ' if reset else 'Stop ') + name, ['docker', 'rm', '-f', '-v', name] if reset else ['docker', 'stop', name])
-    if 'stack-local' in clusters:
-        run('Delete local cluster', ['kind', 'delete', 'cluster', '--name', 'stack-local'])
+    if 'dogfood-local' in clusters:
+        run('Delete local cluster', ['kind', 'delete', 'cluster', '--name', 'dogfood-local'])
     if reset:
         for path in STATE.iterdir():
             if path.name == 'local.lock':
@@ -640,12 +640,12 @@ def status():
     print()
     section('Infrastructure')
     if shutil.which('docker'):
-        for name, label, detail in [('stack-backstage-db', 'PostgreSQL', 'localhost:15432'), ('stack-registry', 'Registry', 'localhost:5005')]:
+        for name, label, detail in [('dogfood-backstage-db', 'PostgreSQL', 'localhost:15432'), ('dogfood-registry', 'Registry', 'localhost:5005')]:
             info = container(name)
             status_row(label, info['State']['Status'] if info else 'absent', detail)
     if shutil.which('kind'):
         clusters = capture(['kind', 'get', 'clusters']).splitlines()
-        status_row('Kubernetes', 'present' if 'stack-local' in clusters else 'absent', 'stack-local')
+        status_row('Kubernetes', 'present' if 'dogfood-local' in clusters else 'absent', 'dogfood-local')
     print()
     rule()
     if untracked:
@@ -657,7 +657,7 @@ def status():
 def logs():
     selection = ENV.get('SERVICE', 'all')
     if selection in ('database', 'registry'):
-        name = 'stack-backstage-db' if selection == 'database' else 'stack-registry'
+        name = 'dogfood-backstage-db' if selection == 'database' else 'dogfood-registry'
         if not owned(name):
             raise RuntimeError(f'{name} does not exist. Run make up first.')
         ENV['VERBOSE'] = '1'
@@ -691,8 +691,8 @@ def logs():
 def checks(command):
     direct = {
         'typecheck': ['npm', 'run', 'typecheck'],
-        'test-agent': ['npm', 'run', 'test', '--workspace', '@stack/agent'],
-        'test-portal': ['npm', 'run', 'test', '--workspace', '@stack/portal'],
+        'test-agent': ['npm', 'run', 'test', '--workspace', '@dogfood/agent'],
+        'test-portal': ['npm', 'run', 'test', '--workspace', '@dogfood/portal'],
         'test-local': ['python3', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-v'],
         'audit': ['npm', 'audit', '--audit-level=high'],
         'catalog-check': ['python3', 'scripts/catalog-check.py'],
@@ -701,7 +701,7 @@ def checks(command):
     if command in direct:
         run(command, direct[command])
     elif command == 'build':
-        run('Build lifecycle CLI', ['go', 'build', '-o', 'bin/stack', './cmd/stack'])
+        run('Build lifecycle CLI', ['go', 'build', '-o', 'bin/dogfood', './cmd/dogfood'])
         run('Build workspaces', ['npm', 'run', 'build'])
     elif command in ('format', 'format-check'):
         write = command == 'format'
@@ -796,14 +796,14 @@ def dispatch(command):
         repository = ENV.get('REPOSITORY') or config['repository']
         if 'REPLACE_ME' in repository or not repository.startswith(('https://', 'ssh://', 'git@')):
             raise RuntimeError('Set REPOSITORY to a reachable Git repository: make catalog-sync REPOSITORY=https://…')
-        ENV['STACK_REPOSITORY'] = repository
+        ENV['DOGFOOD_REPOSITORY'] = repository
         run('Install catalog', ['bash', 'scripts/catalog-sync.sh'])
     elif command == 'tool-routes':
         config = local_config()
         output = capture(['python3', 'scripts/tool-routes.py', '--domain', config['domain'], '--tools', ENV.get('TOOLS', 'argocd')])
         path = STATE / 'tool-routes.json'
         path.write_text(output)
-        run('Install tool routes', ['kubectl', '--context', 'kind-stack-local', 'apply', '-f', str(path)])
+        run('Install tool routes', ['kubectl', '--context', 'kind-dogfood-local', 'apply', '-f', str(path)])
     elif command in ('benchmark', 'benchmark-report'):
         local_config()
         if command == 'benchmark':
@@ -812,7 +812,7 @@ def dispatch(command):
             image = ENV.get('IMAGE') or (STATE / 'sample-image.txt').read_text().strip()
             revision = ENV.get('REVISION') or capture(['git', 'rev-parse', 'HEAD'])
             run('Benchmark previews', ['python3', 'scripts/benchmark.py', '--image', image, '--revision', revision, '--runs', ENV.get('RUNS', '30'), '--concurrency', ENV.get('CONCURRENCY', '5')])
-        run('Benchmark report', ['bin/stack', 'benchmark', '--file', '.stack/benchmark.json'])
+        run('Benchmark report', ['bin/dogfood', 'benchmark', '--file', '.dogfood/benchmark.json'])
         print((LOGS / 'benchmark-report.log').read_text())
     elif command == 'clean':
         if any(alive(s) for s in SERVICES):
@@ -854,7 +854,7 @@ def main():
     if command not in ('status', 'logs', 'open'):
         print()
         rule()
-        hint('Logs in .stack/logs/  ·  make help-all for all commands')
+        hint('Logs in .dogfood/logs/  ·  make help-all for all commands')
         print()
 
 

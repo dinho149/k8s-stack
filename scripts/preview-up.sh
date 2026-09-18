@@ -11,9 +11,9 @@ kind: Namespace
 metadata:
   name: $ns
   labels:
-    stack.platform/managed: 'true'
-    stack.platform/environment: $name
-    stack.platform/routing: 'true'
+    dogfood.platform/managed: 'true'
+    dogfood.platform/environment: $name
+    dogfood.platform/routing: 'true'
 ---
 apiVersion: v1
 kind: ResourceQuota
@@ -86,13 +86,13 @@ spec:
         - ports: [{port: '6443', protocol: TCP}, {port: '443', protocol: TCP}]
 YAML
 fi
-if [[ "$STACK_CONTEXT" == in-cluster ]]; then
+if [[ "$DOGFOOD_CONTEXT" == in-cluster ]]; then
   python3 "$ROOT/scripts/recover-helm.py" "$name" "$ns" --in-cluster unused
 else
-  python3 "$ROOT/scripts/recover-helm.py" "$name" "$ns" --kube-context "$STACK_CONTEXT"
+  python3 "$ROOT/scripts/recover-helm.py" "$name" "$ns" --kube-context "$DOGFOOD_CONTEXT"
 fi
 h upgrade --install "$name" vcluster --repo https://charts.loft.sh --version 0.37.1 --namespace "$ns" -f "$ROOT/deploy/vcluster-values.yaml" --wait --timeout 5m >&2
-printf 'STACK_PHASE=cluster-ready\n'
+printf 'DOGFOOD_PHASE=cluster-ready\n'
 work=$(mktemp -d); pf=''
 cleanup() { [[ -z "$pf" ]] || kill "$pf" 2>/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
@@ -106,8 +106,8 @@ cluster=$(kubectl --kubeconfig "$work/kubeconfig" config view -o jsonpath='{.clu
 kubectl --kubeconfig "$work/kubeconfig" config set-cluster "$cluster" --server="https://127.0.0.1:$port" >/dev/null
 for _ in $(seq 1 60); do kubectl --kubeconfig "$work/kubeconfig" get --raw=/readyz >/dev/null 2>&1 && break; sleep 1; done
 kubectl --kubeconfig "$work/kubeconfig" get --raw=/readyz >/dev/null
-printf 'STACK_PHASE=platform-ready\n'
-if [[ "${STACK_PROFILE:-}" == local ]]; then
+printf 'DOGFOOD_PHASE=platform-ready\n'
+if [[ "${DOGFOOD_PROFILE:-}" == local ]]; then
   python3 "$ROOT/scripts/recover-helm.py" sample default --kubeconfig "$work/kubeconfig"
   helm --kubeconfig "$work/kubeconfig" upgrade --install sample "$ROOT/deploy/charts/sample" --namespace default --set-string image="$image" --set-string revision="$revision" --wait --timeout 5m >&2
 else
@@ -119,11 +119,11 @@ kind: Application
 metadata:
   name: preview-$name
   namespace: argocd
-  labels: {stack.platform/managed: 'true'}
+  labels: {dogfood.platform/managed: 'true'}
 spec:
   project: previews
   source:
-    repoURL: $STACK_REPOSITORY
+    repoURL: $DOGFOOD_REPOSITORY
     targetRevision: main
     path: deploy/charts/sample
     helm:
@@ -142,7 +142,7 @@ apiVersion: v1
 kind: Service
 metadata: {name: sample-route, namespace: $ns}
 spec:
-  selector: {app: stack-sample}
+  selector: {app: dogfood-sample}
   ports: [{name: http, port: 80, targetPort: 8080}]
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -150,15 +150,15 @@ kind: HTTPRoute
 metadata: {name: sample, namespace: $ns}
 spec:
   parentRefs: [{name: platform, namespace: envoy-gateway-system}]
-  hostnames: ['$name.$STACK_DOMAIN']
+  hostnames: ['$name.$DOGFOOD_DOMAIN']
   rules:
     - backendRefs: [{name: sample-route, port: 80}]
 YAML
 scheme=https; suffix=''
-if [[ "${STACK_PROFILE:-}" == local ]]; then scheme=http; suffix=:18080; fi
+if [[ "${DOGFOOD_PROFILE:-}" == local ]]; then scheme=http; suffix=:18080; fi
 for _ in $(seq 1 150); do
-  if body=$(curl --silent --fail --max-time 3 "$scheme://$name.$STACK_DOMAIN$suffix/readyz") && [[ "$body" == "$revision" ]]; then
-    printf 'STACK_PHASE=application-ready\n'; exit 0
+  if body=$(curl --silent --fail --max-time 3 "$scheme://$name.$DOGFOOD_DOMAIN$suffix/readyz") && [[ "$body" == "$revision" ]]; then
+    printf 'DOGFOOD_PHASE=application-ready\n'; exit 0
   fi
   sleep 2
 done

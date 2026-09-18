@@ -189,29 +189,35 @@ test('all routes render in both themes and responsive sizes', async ({ page }) =
       for (const path of routes) {
         await page.goto(path);
         await page.evaluate((value) => {
-          localStorage.setItem('stack.theme', value);
+          localStorage.setItem('dogfood.theme', value);
         }, theme);
         await page.reload();
         await expect(page.locator('.workspace-bar')).toContainText('Updated');
         await expect(page.locator('main h1')).toBeVisible();
+        if (path === '/assistant') {
+          expect(
+            await page
+              .locator('.chat-messages')
+              .evaluate((el) => el.scrollHeight <= el.clientHeight),
+          ).toBe(true);
+        }
         await page.evaluate(() => document.fonts.ready);
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
           `${path} ${theme} ${size} overflow`,
         ).toBe(true);
-        if (size !== 'tablet')
-          await page.screenshot({
-            path: `../../.stack/portal-review/${theme}-${size}-${path.replaceAll('/', '_') || 'overview'}.png`,
-            fullPage: true,
-            animations: 'disabled',
-          });
+        await page.screenshot({
+          path: `../../.dogfood/portal-review/${theme}-${size}-${path.replaceAll('/', '_') || 'overview'}.png`,
+          fullPage: true,
+          animations: 'disabled',
+        });
       }
     }
   }
   expect(errors).toEqual([]);
 });
 
-test('local sign-in errors retain Stack identity and retry', async ({ page }) => {
+test('local sign-in errors retain Dogfood identity and retry', async ({ page }) => {
   await page.route('http://127.0.0.1:4707/**', (route) =>
     route.fulfill({
       status: 503,
@@ -219,8 +225,75 @@ test('local sign-in errors retain Stack identity and retry', async ({ page }) =>
     }),
   );
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Welcome to your workspace.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to Dogfood.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry local sign-in' })).toBeVisible();
   await expect(page.getByText('Powered by Backstage')).toBeVisible();
-  await page.screenshot({ path: '../../.stack/portal-review/sign-in.png', fullPage: true });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    for (const width of [1440, 820, 390]) {
+      await page.setViewportSize({ width, height: 1080 });
+      await page.evaluate(() => document.fonts.ready);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.screenshot({
+        path: `../../.dogfood/portal-review/sign-in-${theme}-${width}.png`,
+        fullPage: true,
+        animations: 'disabled',
+      });
+    }
+  }
+});
+
+test('Dogfood identity, assets, and keyboard mascot interaction', async ({ page }) => {
+  await mockPlatform(page);
+  await page.goto('/');
+  await expect(page).toHaveTitle('Overview · Dogfood');
+  const brand = page.getByRole('link', { name: 'Dogfood home' });
+  await expect(brand).toHaveText('dogfood');
+  await brand.focus();
+  await expect(brand.locator('.dog-ear-left')).toHaveCSS('animation-name', 'dog-ear-flick');
+  for (const path of [
+    '/dogfood.svg',
+    '/dogfood-192.png',
+    '/dogfood-512.png',
+    '/dogfood-wordmark.svg',
+    '/manifest.webmanifest',
+  ]) {
+    const response = await page.request.get(path);
+    expect(response.ok(), path).toBe(true);
+    expect(response.headers()['content-type']).not.toContain('text/html');
+  }
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/dogfood.svg');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(brand.locator('.dog-ear-left')).toHaveCSS('animation-name', 'none');
+});
+
+test('mascot reacts to assistant requests and respects reduced motion', async ({ page }) => {
+  await mockPlatform(page);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/platform/agent', async (route) => {
+    await pending;
+    await route.fulfill({ json: { answer: 'Your preview is ready.' } });
+  });
+  await page.goto('/assistant');
+  const mascot = page.locator('.assistant-identity .dog-mascot');
+  await expect(mascot).toHaveAttribute('data-mood', 'idle');
+  await page.getByLabel('Your request').fill('Check my preview');
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(mascot).toHaveAttribute('data-mood', 'thinking');
+  await expect(mascot.locator('.dog-head')).toHaveCSS('animation-name', 'dog-thinking');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(mascot.locator('.dog-head')).toHaveCSS('animation-name', 'none');
+  release();
+  await expect(mascot).toHaveAttribute('data-mood', 'success');
+  await expect(page.getByText('Your preview is ready.', { exact: true })).toBeVisible();
+  await expect(mascot.locator('.dog-head')).toHaveCSS('animation-name', 'none');
+  await page.getByRole('button', { name: 'New conversation' }).click();
+  await expect(mascot).toHaveAttribute('data-mood', 'idle');
 });

@@ -14,7 +14,7 @@ for tool in a.tools.split(','):
  if tool not in services:raise SystemExit('Only authenticated tool services may be exposed by this generator')
  ns,service,port=services[tool]
  items.extend([
-  {'apiVersion':'v1','kind':'Namespace','metadata':{'name':ns,'labels':{'stack.platform/routing':'true'}}},
+  {'apiVersion':'v1','kind':'Namespace','metadata':{'name':ns,'labels':{'dogfood.platform/routing':'true'}}},
   {'apiVersion':'gateway.networking.k8s.io/v1','kind':'HTTPRoute','metadata':{'name':tool,'namespace':ns},'spec':{'parentRefs':[{'name':'platform','namespace':'envoy-gateway-system'}],'hostnames':[tool+'.'+a.domain],'rules':[{'backendRefs':[{'name':service,'port':port}]}]}}
  ])
 print(json.dumps({'apiVersion':'v1','kind':'List','items':items}))

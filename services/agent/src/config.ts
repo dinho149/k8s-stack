@@ -35,7 +35,7 @@ export function providerEnvironment(
     });
   // Only the trusted application possesses lifecycle and channel credentials.
   for (const key of Object.keys(env))
-    if (/^(STACK_|SLACK_|TEAMS_|GOOGLE_CHAT_|GITHUB_)/.test(key)) delete env[key];
+    if (/^(DOGFOOD_|STACK_|SLACK_|TEAMS_|GOOGLE_CHAT_|GITHUB_)/.test(key)) delete env[key];
   return env;
 }
 export function providersFromEnv(): Record<string, Provider> {

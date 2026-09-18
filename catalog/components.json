@@ -1,5 +1,5 @@
 {
-  "apiVersion": "stack.platform/catalog-v1",
+  "apiVersion": "dogfood.platform/catalog-v1",
   "components": [
     {
       "name": "cert-manager",
@@ -22,7 +22,7 @@
       "cloudOnly": true,
       "values": {
         "policy": "upsert-only",
-        "txtOwnerId": "stack",
+        "txtOwnerId": "dogfood",
         "sources": [
           "gateway-httproute"
         ]

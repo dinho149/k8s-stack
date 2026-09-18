@@ -74,7 +74,7 @@ func LoadConfig(path string) (Config, error) {
 	return c, c.Validate()
 }
 func (c Config) Validate() error {
-	if c.APIVersion != "stack.platform/v1alpha1" {
+	if c.APIVersion != "dogfood.platform/v1alpha1" {
 		return errors.New("unsupported apiVersion")
 	}
 	if !nameRE.MatchString(c.Name) {

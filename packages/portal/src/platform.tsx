@@ -39,7 +39,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
     [linkCode, setLinkCode] = useState('');
   const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem('stack.theme') === 'dark' ? 'dark' : 'light';
+      return localStorage.getItem('dogfood.theme') === 'dark' ? 'dark' : 'light';
     } catch {
       return 'light';
     }
@@ -47,7 +47,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
-      localStorage.setItem('stack.theme', theme);
+      localStorage.setItem('dogfood.theme', theme);
     } catch {}
   }, [theme]);
   useEffect(() => {
@@ -55,7 +55,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
     const page =
       navigation.find((n) => n.to !== '/' && location.pathname.startsWith(n.to))?.label ??
       (location.pathname === '/' ? 'Overview' : 'Page not found');
-    document.title = `${location.pathname === '/environments/new' ? 'Create preview' : page} · Stack`;
+    document.title = `${location.pathname === '/environments/new' ? 'Create preview' : page} · Dogfood`;
     window.scrollTo(0, 0);
   }, [location.pathname]);
   return (
@@ -105,7 +105,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
       <div className="workspace-bar">
         <div>
           <span className="workspace-dot" />
-          Stack workspace
+          Dogfood workspace
         </div>
         <span>
           {error
@@ -149,7 +149,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
         </Routes>
       </main>
       <footer className="app-footer">
-        <span>Stack · Space to build.</span>
+        <span>Dogfood · Good work. Great company.</span>
         <Credit />
       </footer>
       {accountOpen && (
@@ -186,7 +186,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
                 onClick={() =>
                   void action.run(async () => {
                     try {
-                      sessionStorage.removeItem('stack.conversation');
+                      sessionStorage.removeItem('dogfood.conversation');
                     } catch {}
                     await onSignOut();
                   })

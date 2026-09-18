@@ -1,6 +1,6 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
-metadata: {name: stack}
+metadata: {name: dogfood}
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
 ---
@@ -8,7 +8,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata: {name: platform, namespace: envoy-gateway-system}
 spec:
-  gatewayClassName: stack
+  gatewayClassName: dogfood
   listeners:
     - name: https
       protocol: HTTPS
@@ -20,4 +20,4 @@ spec:
         namespaces:
           from: Selector
           selector:
-            matchLabels: {stack.platform/routing: 'true'}
+            matchLabels: {dogfood.platform/routing: 'true'}

@@ -10,7 +10,7 @@ export class PlatformClient {
       headers: {
         Authorization: `Bearer ${this.token}`,
         'Content-Type': 'application/json',
-        ...(this.subject ? { 'X-Stack-Subject': this.subject } : {}),
+        ...(this.subject ? { 'X-Dogfood-Subject': this.subject } : {}),
         ...(idempotency ? { 'Idempotency-Key': idempotency } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

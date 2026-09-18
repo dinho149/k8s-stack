@@ -1,6 +1,6 @@
 # Lifecycle API v1
 
-All `/v1` routes require an OIDC bearer token, explicit loopback development token, or a trusted service token with a configured `X-Stack-Subject`. Unknown users are rejected. JSON bodies reject unknown fields and trailing content; maximum body size is 64 KiB.
+All `/v1` routes require an OIDC bearer token, explicit loopback development token, or a trusted service token with a configured `X-Dogfood-Subject`. Unknown users are rejected. JSON bodies reject unknown fields and trailing content; maximum body size is 64 KiB.
 
 | Method | Route | Purpose |
 |---|---|---|

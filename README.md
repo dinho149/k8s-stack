@@ -1,8 +1,10 @@
-# Stack
+# Dogfood
 
 A Kubernetes developer platform for kind, EKS, and GKE, with disposable PR previews, Backstage, and a Claude Agent SDK assistant for Slack, Teams, Google Chat, and the portal.
 
-**Measured local warm application startup: p95 43.59 seconds; 30/30 launches passed at concurrency 5.** Including queue time, p95 was 44.05 seconds against the 180-second target. Cloud and cold-host results remain unmeasured; see the [verification record](docs/verification.md). Every deployment records queue, cluster, platform, and application milestones. Cold starts, failed runs, and retries remain visible.
+**Historical Stack measurement (before the Dogfood rebrand), local warm application startup: p95 43.59 seconds; 30/30 launches passed at concurrency 5.** Including queue time, p95 was 44.05 seconds against the 180-second target. Cloud and cold-host results remain unmeasured; see the [verification record](docs/verification.md). Every deployment records queue, cluster, platform, and application milestones. Cold starts, failed runs, and retries remain visible.
+
+For the visual identity, see [brand guidance](docs/brand.md). Existing Stack users should follow [the fresh-install transition](docs/dogfood-transition.md) before starting Dogfood.
 
 ## Run locally
 
@@ -31,9 +33,9 @@ make doctor
 make up
 ```
 
-Open **http://localhost:3000**, or run `make open`. `make up` also ensures setup, creates the `stack-local` kind cluster, installs the base platform, builds the sample image, and starts PostgreSQL, the lifecycle API, Backstage, and the portal in the background. It returns only after services are ready. Repeated runs reuse healthy services and data; bootstrap reconciles cluster components and the sample image is rebuilt.
+Open **http://localhost:3000**, or run `make open`. `make up` also ensures setup, creates the `dogfood-local` kind cluster, installs the base platform, builds the sample image, and starts PostgreSQL, the lifecycle API, Backstage, and the portal in the background. It returns only after services are ready. Repeated runs reuse healthy services and data; bootstrap reconciles cluster components and the sample image is rebuilt.
 
-No credentials need to be sourced into your shell. Make creates private, random credentials in `.stack/local.env` and loads them for local commands. Guest sign-in is confined to loopback development services. The agent is optional and requires model access.
+No credentials need to be sourced into your shell. Make creates private, random credentials in `.dogfood/local.env` and loads them for local commands. Guest sign-in is confined to loopback development services. The agent is optional and requires model access.
 
 ```sh
 make                       # Local development dashboard
@@ -47,9 +49,9 @@ make stop                  # Stop applications only
 make down                  # Delete previews and cluster; retain database/registry data
 ```
 
-`make down` first deletes previews through the lifecycle API and waits for cleanup. If cleanup fails, it retains the cluster and prints recovery instructions. It then stops application services and the dedicated PostgreSQL/registry containers and deletes only `stack-local`. It retains local credentials and lifecycle history with database data. `make up` recreates the cluster and restarts retained containers.
+`make down` first deletes previews through the lifecycle API and waits for cleanup. If cleanup fails, it retains the cluster and prints recovery instructions. It then stops application services and the dedicated PostgreSQL/registry containers and deletes only `dogfood-local`. It retains local credentials and lifecycle history with database data. `make up` recreates the cluster and restarts retained containers.
 
-For a complete fresh start, `make reset CONFIRM=stack-local` deletes the local cluster, dedicated containers and their data, credentials, and `.stack` state. It leaves `.env` intact. `make clean` removes generated build/test artifacts after `make stop`.
+For a complete fresh start, `make reset CONFIRM=dogfood-local` deletes the local cluster, dedicated containers and their data, credentials, and `.dogfood` state. It leaves `.env` intact. `make clean` removes generated build/test artifacts after `make stop`.
 
 ### Preview workflow
 
@@ -66,7 +68,7 @@ make preview-down NAME=pr-demo CONFIRMATION=<returned-id>
 
 `make preview-status` lists all previews. Creation and retry default to the recorded sample image digest and current Git HEAD; override with `IMAGE=registry/image@sha256:... REVISION=<commit-sha>`. Run `make sample-build` after changing the sample workload. Creation, retry, and confirmed deletion wait for the operation result. Extension adds minutes and preserves the API's generation checks.
 
-Local previews deploy directly through Helm into vClusters, so an unpublished repository works. Cloud previews use Argo CD and require a reachable Git repository. Local Make commands require the default `stack-local` kind configuration in `platform.yaml`; they never select a cluster from your current kubectl context.
+Local previews deploy directly through Helm into vClusters, so an unpublished repository works. Cloud previews use Argo CD and require a reachable Git repository. Local Make commands require the default `dogfood-local` kind configuration in `platform.yaml`; they never select a cluster from your current kubectl context.
 
 ### Command reference
 
@@ -80,7 +82,7 @@ Local previews deploy directly through Helm into vClusters, so an unpublished re
 | Additional checks     | `browser-install`, `audit`, `infra-validate`, `catalog-check`, `test-isolation`                                            |
 | Optional tools        | `catalog-sync`, `tool-routes`, `benchmark`, `benchmark-report`                                                             |
 
-All entries are Make targets: run `make <command>`. `make help-all` documents their arguments. Use `VERBOSE=1` to stream subprocess details and `NO_COLOR=1` to disable color. Redirected output is plain text. Complete task and service logs live under `.stack/logs/`; failures show a short excerpt and log location. `make logs` labels service output and masks configured secrets.
+All entries are Make targets: run `make <command>`. `make help-all` documents their arguments. Use `VERBOSE=1` to stream subprocess details and `NO_COLOR=1` to disable color. Redirected output is plain text. Complete task and service logs live under `.dogfood/logs/`; failures show a short excerpt and log location. `make logs` labels service output and masks configured secrets.
 
 ### Optional agent
 
@@ -118,7 +120,7 @@ make benchmark RUNS=30 CONCURRENCY=5
 make benchmark-report
 ```
 
-Routes should be enabled only for installed tools. Benchmarking uses the sample digest and Git HEAD unless `IMAGE` and `REVISION` are supplied. It records failures and cleans up its own previews without deleting the host cluster. The report requires at least 30 successful warm runs and no failures to assert the target. Use documented hardware and pre-pulled images for warm comparisons. Bootstrap timings are recorded in `.stack/bootstrap-timing.json`.
+Routes should be enabled only for installed tools. Benchmarking uses the sample digest and Git HEAD unless `IMAGE` and `REVISION` are supplied. It records failures and cleans up its own previews without deleting the host cluster. The report requires at least 30 successful warm runs and no failures to assert the target. Use documented hardware and pre-pulled images for warm comparisons. Bootstrap timings are recorded in `.dogfood/bootstrap-timing.json`.
 
 `make test-isolation` requires two running previews; create them with `make preview-up NAME=isolation-a` and `make preview-up NAME=isolation-b`, then delete them using the normal confirmation workflow.
 
@@ -127,8 +129,8 @@ Routes should be enabled only for installed tools. Benchmarking uses the sample 
 - **Missing/wrong tool version:** run `make doctor` and use the prerequisite table above. Docker must be running. OpenTofu is optional for startup but required by the full checks.
 - **Occupied port or an older development session:** stop the original session in its terminal before `make up`. Make refuses to kill processes it does not own.
 - **Service startup failure:** use `make logs SERVICE=api`, `backend`, or `portal`, fix the reported issue, and retry `make up`. Only application processes started by the failed attempt are stopped; provisioned cluster/container resources are retained for diagnosis.
-- **Database or registry ownership failure:** an existing container with the expected name must carry the `stack.platform/managed=true` label. Rename unrelated containers rather than relabeling them.
-- **Lost local credentials:** restore `.stack/local.env` with the retained database, or use the explicit full reset. Do not delete credentials while retaining database data.
+- **Database or registry ownership failure:** an existing container with the expected name must carry the `dogfood.platform/managed=true` label. Rename unrelated containers rather than relabeling them.
+- **Lost local credentials:** restore `.dogfood/local.env` with the retained database, or use the explicit full reset. Do not delete credentials while retaining database data.
 - **Deletion failure:** inspect `make preview-status` and `make preview-diagnostics NAME=...`; restore service health with `make up`, then retry `make down`. Full reset is available when local data can be discarded.
 - **Another operation is running:** wait for the current Make operation. The OS releases the lifecycle lock when its process exits.
 - **Browser dependencies on Linux:** run `make browser-install WITH_DEPS=1` to install Playwright's system dependencies; this can invoke the system package manager with elevated permissions.
@@ -166,7 +168,7 @@ make ship-gate             # Formatting, lint, all tests, Helm, builds, infrastr
 
 | Area                                  | Location                              |
 | ------------------------------------- | ------------------------------------- |
-| CLI and lifecycle service             | `cmd/stack`, `internal/platform`      |
+| CLI and lifecycle service             | `cmd/dogfood`, `internal/platform`    |
 | Claude agent and chat adapters        | `services/agent`                      |
 | Backstage frontend and backend plugin | `packages/portal`, `packages/backend` |
 | Helm charts and cluster resources     | `deploy`                              |
@@ -176,7 +178,7 @@ make ship-gate             # Formatting, lint, all tests, Helm, builds, infrastr
 
 ## Portal experience
 
-Stack has dedicated overview, environment, release, tool, policy, and assistant pages, with shareable URLs and a slate/iris design in light and dark themes. The theme switcher and account controls are in the masthead. The footer and sign-in screen include “Powered by Backstage” attribution.
+Dogfood has dedicated overview, environment, release, tool, policy, and assistant pages, with shareable URLs and a cobalt-and-gold identity with an original animated dog mascot in light and dark themes. The theme switcher and account controls are in the masthead. The footer and sign-in screen include “Powered by Backstage” attribution.
 
 Preview creation and release promotion include review steps. Environment details refresh every five seconds, show real deployment milestones, and retain server-issued deletion confirmation and generation checks. Assistant history is kept only in the current browser tab’s session; changing inference provider starts a new conversation.
 
@@ -189,4 +191,4 @@ make browser-install
 make test-portal
 ```
 
-The tests start a dedicated Vite instance on port 4173 and intercept backend requests with controlled fixtures. They exercise navigation, creation, promotions, lifecycle actions, failures, account linking, and assistant conversations. Responsive checks cover desktop, tablet, and mobile in both themes; screenshots are written to `.stack/portal-review/`. CI installs Chromium before running the existing ship gate.
+The tests start a dedicated Vite instance on port 4173 and intercept backend requests with controlled fixtures. They exercise navigation, creation, promotions, lifecycle actions, failures, account linking, and assistant conversations. Responsive checks cover desktop, tablet, and mobile in both themes; screenshots are written to `.dogfood/portal-review/`. CI installs Chromium before running the existing ship gate.

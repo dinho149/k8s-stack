@@ -11,7 +11,7 @@ spec:
           - resources:
               kinds: [Pod]
               namespaceSelector:
-                matchLabels: {stack.platform/managed: 'true'}
+                matchLabels: {dogfood.platform/managed: 'true'}
       validate:
         podSecurity:
           level: baseline
@@ -30,7 +30,7 @@ spec:
           - resources:
               kinds: [Service]
               namespaceSelector:
-                matchLabels: {stack.platform/managed: 'true'}
+                matchLabels: {dogfood.platform/managed: 'true'}
       validate:
         message: Preview services must use ClusterIP and the shared gateway.
         pattern:

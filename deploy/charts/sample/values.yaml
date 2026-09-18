@@ -1,4 +1,4 @@
-image: ghcr.io/replace-me/stack-sample@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+image: ghcr.io/replace-me/dogfood-sample@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 revision: abcdef1234
 replicas: 1
 postgres:

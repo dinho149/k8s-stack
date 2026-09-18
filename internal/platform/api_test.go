@@ -13,7 +13,7 @@ func TestAuthenticationCannotBeSpoofedByHeader(t *testing.T) {
 	for _, token := range []string{"", "bad"} {
 		r := httptest.NewRequest("GET", "/v1/environments", nil)
 		r.Header.Set("Authorization", "Bearer "+token)
-		r.Header.Set("X-Stack-Subject", "local-developer")
+		r.Header.Set("X-Dogfood-Subject", "local-developer")
 		w := httptest.NewRecorder()
 		a.Handler().ServeHTTP(w, r)
 		if w.Code != http.StatusForbidden {
@@ -51,7 +51,7 @@ func TestRedactionPreservesJSON(t *testing.T) {
 
 func TestMetricsRequireConfiguredScrapeCredential(t *testing.T) {
 	s, _ := setup(t)
-	t.Setenv("STACK_METRICS_TOKEN", strings.Repeat("m", 32))
+	t.Setenv("DOGFOOD_METRICS_TOKEN", strings.Repeat("m", 32))
 	a := &API{Store: s, serviceToken: strings.Repeat("s", 32)}
 	for _, tc := range []struct {
 		token  string
@@ -64,8 +64,30 @@ func TestMetricsRequireConfiguredScrapeCredential(t *testing.T) {
 		if w.Code != tc.status {
 			t.Fatalf("got %d, want %d", w.Code, tc.status)
 		}
-		if tc.status == 200 && !strings.Contains(w.Body.String(), "stack_launch_duration_seconds_bucket") {
+		if tc.status == 200 && !strings.Contains(w.Body.String(), "dogfood_launch_duration_seconds_bucket") {
 			t.Fatal("missing startup histogram")
+		}
+	}
+}
+
+func TestDogfoodServiceIdentityHeader(t *testing.T) {
+	s, _ := setup(t)
+	token := strings.Repeat("s", 32)
+	a := &API{Store: s, serviceToken: token}
+	for _, tc := range []struct {
+		header string
+		status int
+	}{
+		{"X-Dogfood-Subject", http.StatusOK},
+		{"X-Stack-Subject", http.StatusForbidden},
+	} {
+		r := httptest.NewRequest("GET", "/v1/environments", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set(tc.header, "local-developer")
+		w := httptest.NewRecorder()
+		a.Handler().ServeHTTP(w, r)
+		if w.Code != tc.status {
+			t.Fatalf("%s: got %d, want %d", tc.header, w.Code, tc.status)
 		}
 	}
 }

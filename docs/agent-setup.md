@@ -21,9 +21,9 @@ export CLOUD_ML_REGION=europe-west1
 export VERTEX_MODEL='<enabled Claude model ID>'
 ```
 
-Both sets can be present. Backstage's provider selector starts a fresh conversation when changed; chat uses the deployment's default provider. Deploy separate chat worker endpoints for separate cloud routing policies. Set `STACK_API_URL`, `STACK_SERVICE_TOKEN`, and `AGENT_STATE_DIR`. `AGENT_CONCURRENCY` defaults to 4; `AGENT_MAX_BUDGET_USD` defaults to 0.5 per turn, with a 120-second timeout and 12-turn limit. Cloud-side account budgets and quotas remain authoritative.
+Both sets can be present. Backstage's provider selector starts a fresh conversation when changed; chat uses the deployment's default provider. Deploy separate chat worker endpoints for separate cloud routing policies. Set `DOGFOOD_API_URL`, `DOGFOOD_SERVICE_TOKEN`, and `AGENT_STATE_DIR`. `AGENT_CONCURRENCY` defaults to 4; `AGENT_MAX_BUDGET_USD` defaults to 0.5 per turn, with a 120-second timeout and 12-turn limit. Cloud-side account budgets and quotas remain authoritative.
 
-The infrastructure adapters provision an AWS agent role or Google service account. Annotate Kubernetes service account `platform/stack-agent` using the corresponding output. Cross-cloud access requires explicitly configured workload federation; the module for one cloud does not automatically grant access to the other.
+The infrastructure adapters provision an AWS agent role or Google service account. Annotate Kubernetes service account `platform/dogfood-agent` using the corresponding output. Cross-cloud access requires explicitly configured workload federation; the module for one cloud does not automatically grant access to the other.
 
 ## Slack
 

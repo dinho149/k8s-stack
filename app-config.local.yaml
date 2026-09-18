@@ -1,5 +1,5 @@
 app:
-  title: Stack
+  title: Dogfood
   baseUrl: http://localhost:3000
 organization:
   name: Local platform
@@ -20,7 +20,7 @@ auth:
 platform:
   apiUrl: http://127.0.0.1:8088
   agentUrl: http://127.0.0.1:8090
-  serviceToken: ${STACK_SERVICE_TOKEN}
+  serviceToken: ${DOGFOOD_SERVICE_TOKEN}
   identities:
     - entityRef: user:development/guest
       subject: local-developer

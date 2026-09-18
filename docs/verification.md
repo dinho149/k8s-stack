@@ -1,5 +1,19 @@
 # Verification record
 
+## Dogfood rebrand — 2026-09-18
+
+- `make ship-gate` passed: formatting, Go vet/race tests, all workspace typechecks, 32 local orchestration tests, 6 agent tests, 11 portal browser tests, Helm lint, builds, four OpenTofu module validations, and the high/critical npm audit threshold. Moderate upstream audit findings remain.
+- `make catalog-check` passed. After visual refinements, all 11 portal tests, the portal production build, and formatting checks passed again.
+- Browser coverage spans all eight portal routes in light/dark themes at desktop, tablet, and mobile sizes, with no horizontal overflow or uncaught page errors. Sign-in was captured in both themes at all three widths. Screenshots are in `.dogfood/portal-review/`. Visual inspection caught and corrected a clipped mobile assistant welcome mascot.
+- Brand tests cover the Dogfood title/home link, SVG/PNG/manifest delivery, keyboard ear flick, assistant thinking/success reactions, and reduced-motion suppression. Security tests cover the renamed identity header, secret filtering for both new and legacy prefixes, fresh credentials, and refusal to adopt legacy ownership labels.
+- A fresh isolated `bin/dogfood serve` process on a temporary loopback port passed health, authenticated `X-Dogfood-Subject` access, and `dogfood_*` metrics checks. It was stopped and its temporary database removed.
+- Full fresh Kubernetes startup was **not run**: `make doctor` reported existing services on ports 8088, 7007, 3000, 15432, 5005, 18080, and 18443. Existing Stack processes, containers, cluster, and `.stack` state were left untouched. See [transition instructions](dogfood-transition.md).
+- No cloud provisioning, live external chat/SSO changes, or new startup benchmark was performed. Infrastructure validation was static.
+
+## Historical Stack verification
+
+The remaining sections record the **pre-rebrand Stack installation**. They are historical evidence, not measurements of a fresh Dogfood deployment.
+
 Validation performed on macOS arm64 with Docker Desktop (18 reported CPUs, approximately 8 GB Docker memory). Existing unrelated local containers remained running. Tests use only the dedicated `stack-local` cluster, local registry, and Backstage database.
 
 ## Passed

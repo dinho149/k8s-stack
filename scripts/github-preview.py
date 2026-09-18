@@ -29,8 +29,8 @@ if not closed:
     if not re.fullmatch(re.escape(f'ghcr.io/{repo.lower()}/sample@sha256:') + '[a-f0-9]{64}', artifact['IMAGE']):
         raise SystemExit('Unexpected image reference')
 name = f'pr-{number}'
-headers = {'Authorization': 'Bearer ' + os.environ['STACK_SERVICE_TOKEN'], 'X-Stack-Subject': f"github:{pr['user']['id']}", 'Idempotency-Key': f"{number}:{pr['head']['sha']}:{os.environ['GITHUB_RUN_ID']}"}
-base = os.environ['STACK_API_URL']
+headers = {'Authorization': 'Bearer ' + os.environ['DOGFOOD_SERVICE_TOKEN'], 'X-Dogfood-Subject': f"github:{pr['user']['id']}", 'Idempotency-Key': f"{number}:{pr['head']['sha']}:{os.environ['GITHUB_RUN_ID']}"}
+base = os.environ['DOGFOOD_API_URL']
 try:
     env = request(base, f'/v1/environments/{name}', headers=headers)
 except urllib.error.HTTPError as error:

@@ -1,3 +1,4 @@
+import { Mascot, Wordmark } from './mascot';
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Operation, duration, dateTime } from './api';
@@ -92,17 +93,9 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 }
 export function Brand() {
   return (
-    <Link to="/" className="brand" aria-label="Stack home">
-      <svg viewBox="0 0 36 36" width="34" height="34" fill="none" aria-hidden="true">
-        <path d="m5 10 13-6 13 6-13 6z" fill="currentColor" />
-        <path
-          d="m5 18 13 6 13-6M5 26l13 6 13-6"
-          stroke="currentColor"
-          strokeWidth="3.5"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <span>stack</span>
+    <Link to="/" className="brand" aria-label="Dogfood home">
+      <Mascot />
+      <Wordmark />
     </Link>
   );
 }

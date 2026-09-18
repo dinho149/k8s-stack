@@ -1,3 +1,4 @@
+import { Mascot, Wordmark } from './mascot';
 import React, { useEffect, useState } from 'react';
 import { ProxiedSignInPage, UserIdentity } from '@backstage/core-components';
 import {
@@ -19,23 +20,23 @@ export function SignInLayout({ children }: React.PropsWithChildren) {
   return (
     <div className="signin">
       <section className="signin-story">
-        <a href="/" className="brand">
-          <Icon name="layers" size={36} />
-          <span>stack</span>
+        <a href="/" className="brand" aria-label="Dogfood home">
+          <Mascot />
+          <Wordmark />
         </a>
         <div>
-          <span className="signin-orbit">
-            <Icon name="layers" size={88} />
-          </span>
+          <div className="signin-mascot">
+            <Mascot size={200} mood="greeting" />
+          </div>
           <h1>
-            Make space
+            Good work.
             <br />
-            for what’s next.
+            Great company.
           </h1>
           <p>
             Your environments, releases, and tools.
             <br />
-            One thoughtfully connected workspace.
+            Your next idea, ready to run.
           </p>
         </div>
         <span className="signin-caption">From first preview to production.</span>
@@ -45,8 +46,8 @@ export function SignInLayout({ children }: React.PropsWithChildren) {
           <span className="section-icon">
             <Icon name="grid" size={26} />
           </span>
-          <h2>Welcome to your workspace.</h2>
-          <p>Sign in to build, explore, and move things forward.</p>
+          <h2>Welcome to Dogfood.</h2>
+          <p>Sign in to create previews, ship releases, and keep building.</p>
           {children}
         </div>
         <Credit />
@@ -128,7 +129,7 @@ function OidcSignIn(props: SignInPageProps) {
     </>
   );
 }
-export function StackSignIn(props: SignInPageProps & { local: boolean }) {
+export function DogfoodSignIn(props: SignInPageProps & { local: boolean }) {
   return (
     <SignInLayout>
       {props.local ? (

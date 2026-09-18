@@ -1,11 +1,11 @@
-apiVersion: stack.platform/v1alpha1
-name: stack-local
+apiVersion: dogfood.platform/v1alpha1
+name: dogfood-local
 provider: kind
 profile: local
 domain: 127.0.0.1.nip.io
 region: local
-context: kind-stack-local
-statePath: .stack/state.db
+context: kind-dogfood-local
+statePath: .dogfood/state.db
 listen: 127.0.0.1:8088
 repository: https://github.com/REPLACE_ME/k8s-stack.git
 components: [argocd, gateway, cert-manager, kyverno, monitoring, logs, traces, secrets, backups, costs]
@@ -26,7 +26,7 @@ agent:
     model: REPLACE_WITH_ENABLED_VERTEX_MODEL_ID
 auth:
   issuer: ''
-  clientId: stack
+  clientId: dogfood
   users:
     - subject: local-developer
       role: admin

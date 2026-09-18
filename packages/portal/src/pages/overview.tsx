@@ -1,3 +1,4 @@
+import { Mascot } from '../mascot';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { usePlatform, dateTime } from '../api';
@@ -12,7 +13,7 @@ export function Overview() {
     <>
       <Heading
         title="Your work, in motion."
-        description="From the first preview to the next release. Make room to build."
+        description="Your previews, releases, and tools. All right here."
         action={
           <Link className="button primary" to="/environments/new">
             <Icon name="plus" />
@@ -23,7 +24,7 @@ export function Overview() {
       <section className="overview-band">
         <div className="overview-intro">
           <span className="workspace-symbol">
-            <Icon name="layers" size={32} />
+            <Mascot size={56} />
           </span>
           <h2>
             One workspace.

@@ -3,8 +3,8 @@
 import json
 import subprocess
 
-base = ['kubectl', '--context', 'kind-stack-local']
-pods = json.loads(subprocess.check_output(base + ['get', 'pods', '-A', '-l', 'app=stack-sample', '-o', 'json']))['items']
+base = ['kubectl', '--context', 'kind-dogfood-local']
+pods = json.loads(subprocess.check_output(base + ['get', 'pods', '-A', '-l', 'app=dogfood-sample', '-o', 'json']))['items']
 pods = [p for p in pods if p['status'].get('phase') == 'Running' and p['metadata']['namespace'].startswith('preview-')]
 if len({p['metadata']['namespace'] for p in pods}) < 2:
     raise SystemExit('Need two running previews to test isolation')

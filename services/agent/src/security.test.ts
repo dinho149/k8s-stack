@@ -9,13 +9,15 @@ test('provider selection removes fallback credentials and action credentials', (
     {
       ANTHROPIC_API_KEY: 'secret',
       CLAUDE_CODE_USE_BEDROCK: '1',
-      STACK_SERVICE_TOKEN: 'secret',
+      DOGFOOD_SERVICE_TOKEN: 'secret',
+      STACK_SERVICE_TOKEN: 'legacy-secret',
       SLACK_BOT_TOKEN: 'secret',
     },
   );
   assert.equal(env.CLAUDE_CODE_USE_VERTEX, '1');
   assert.equal(env.CLAUDE_CODE_USE_BEDROCK, undefined);
   assert.equal(env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(env.DOGFOOD_SERVICE_TOKEN, undefined);
   assert.equal(env.STACK_SERVICE_TOKEN, undefined);
   assert.equal(env.SLACK_BOT_TOKEN, undefined);
 });

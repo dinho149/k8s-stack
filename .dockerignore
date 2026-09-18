@@ -1,8 +1,11 @@
 .git
 node_modules
-.stack
+.dogfood
 .env*
 **/node_modules
 **/.terraform
 **/dist
 bin
+
+# Retained legacy state may contain credentials.
+.stack

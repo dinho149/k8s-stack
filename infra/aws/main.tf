@@ -26,7 +26,7 @@ variable "bedrock_model_arns" {
 resource "aws_vpc" "platform" {
   cidr_block           = "10.60.0.0/16"
   enable_dns_hostnames = true
-  tags                 = { Name = var.name, "stack.platform/managed" = "true" }
+  tags                 = { Name = var.name, "dogfood.platform/managed" = "true" }
 }
 resource "aws_internet_gateway" "platform" { vpc_id = aws_vpc.platform.id }
 resource "aws_subnet" "public" {
@@ -136,7 +136,7 @@ resource "aws_iam_openid_connect_provider" "cluster" {
 locals { oidc_host = replace(aws_iam_openid_connect_provider.cluster.url, "https://", "") }
 resource "aws_iam_role" "agent" {
   name               = "${var.name}-agent"
-  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Federated = aws_iam_openid_connect_provider.cluster.arn }, Action = "sts:AssumeRoleWithWebIdentity", Condition = { StringEquals = { "${local.oidc_host}:sub" = "system:serviceaccount:platform:stack-agent", "${local.oidc_host}:aud" = "sts.amazonaws.com" } } }] })
+  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Federated = aws_iam_openid_connect_provider.cluster.arn }, Action = "sts:AssumeRoleWithWebIdentity", Condition = { StringEquals = { "${local.oidc_host}:sub" = "system:serviceaccount:platform:dogfood-agent", "${local.oidc_host}:aud" = "sts.amazonaws.com" } } }] })
 }
 resource "aws_iam_role_policy" "agent" {
   role   = aws_iam_role.agent.id

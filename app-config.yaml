@@ -1,5 +1,5 @@
 app:
-  title: Stack
+  title: Dogfood
   baseUrl: http://localhost:3000
 organization:
   name: Platform Engineering
@@ -27,9 +27,9 @@ auth:
           resolvers:
             - resolver: emailMatchingUserEntityProfileEmail
 platform:
-  apiUrl: ${STACK_API_URL}
+  apiUrl: ${DOGFOOD_API_URL}
   agentUrl: http://localhost:8090
-  serviceToken: ${STACK_SERVICE_TOKEN}
+  serviceToken: ${DOGFOOD_SERVICE_TOKEN}
   identities:
     - entityRef: user:default/guest
       subject: local-developer

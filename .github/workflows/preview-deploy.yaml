@@ -32,6 +32,6 @@ jobs:
       - name: Reconcile preview with current GitHub state
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STACK_API_URL: ${{ vars.STACK_API_URL }}
-          STACK_SERVICE_TOKEN: ${{ secrets.STACK_SERVICE_TOKEN }}
+          DOGFOOD_API_URL: ${{ vars.DOGFOOD_API_URL }}
+          DOGFOOD_SERVICE_TOKEN: ${{ secrets.DOGFOOD_SERVICE_TOKEN }}
         run: python3 scripts/github-preview.py
