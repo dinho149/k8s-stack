@@ -7,9 +7,9 @@ import { PlatformClient } from './client.js';
 import { providersFromEnv, required } from './config.js';
 import { send, verifyGoogle, verifySlack, verifyTeams, teamsServiceURL } from './channels.js';
 
-const base = required('STACK_API_URL'),
-  token = required('STACK_SERVICE_TOKEN');
-const stateDir = process.env.AGENT_STATE_DIR ?? '.stack/agent';
+const base = required('DOGFOOD_API_URL'),
+  token = required('DOGFOOD_SERVICE_TOKEN');
+const stateDir = process.env.AGENT_STATE_DIR ?? '.dogfood/agent';
 await mkdir(join(stateDir, 'receipts'), { recursive: true, mode: 0o700 });
 const providers = providersFromEnv();
 const defaultProvider = required('AGENT_PROVIDER');

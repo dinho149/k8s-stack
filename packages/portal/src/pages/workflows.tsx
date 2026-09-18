@@ -1,3 +1,4 @@
+import { Mascot } from '../mascot';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Policies as PolicyData,
@@ -281,7 +282,7 @@ type Message = { role: 'user' | 'assistant'; text: string };
 type Conversation = { provider: string; id: string; messages: Message[] };
 const initialConversation = (): Conversation => {
   try {
-    const saved = JSON.parse(sessionStorage.getItem('stack.conversation') ?? 'null');
+    const saved = JSON.parse(sessionStorage.getItem('dogfood.conversation') ?? 'null');
     if (
       saved &&
       ['bedrock', 'vertex'].includes(saved.provider) &&
@@ -300,10 +301,11 @@ export function Assistant() {
   const action = useAction();
   const [chat, setChat] = useState(initialConversation);
   const [draft, setDraft] = useState('');
+  const [completed, setCompleted] = useState(0);
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     try {
-      sessionStorage.setItem('stack.conversation', JSON.stringify(chat));
+      sessionStorage.setItem('dogfood.conversation', JSON.stringify(chat));
     } catch {}
   }, [chat]);
   useEffect(() => {
@@ -311,6 +313,7 @@ export function Assistant() {
   }, [chat.messages, action.busy]);
   const reset = (provider = chat.provider) => {
     action.clear();
+    setCompleted(0);
     setChat({ provider, id: crypto.randomUUID(), messages: [] });
     setDraft('');
   };
@@ -324,10 +327,13 @@ export function Assistant() {
         <div className="chat-toolbar">
           <div className="assistant-identity">
             <span className="section-icon">
-              <Icon name="spark" />
+              <Mascot
+                key={`${completed}-${action.busy}`}
+                mood={action.busy ? 'thinking' : completed && !action.error ? 'success' : 'idle'}
+              />
             </span>
             <div>
-              <strong>Stack assistant</strong>
+              <strong>Dogfood assistant</strong>
               <small>Actions use your platform permissions</small>
             </div>
           </div>
@@ -347,10 +353,15 @@ export function Assistant() {
             New conversation
           </button>
         </div>
-        <div className="chat-messages" role="log" aria-label="Conversation" aria-live="polite">
+        <div
+          className={`chat-messages${chat.messages.length ? '' : ' chat-empty'}`}
+          role="log"
+          aria-label="Conversation"
+          aria-live="polite"
+        >
           {!chat.messages.length && (
             <div className="chat-welcome">
-              <Icon name="spark" size={42} />
+              <Mascot size={96} />
               <h2>What can we help move forward?</h2>
               <p>Understand an environment, explain a policy, or extend a preview.</p>
               <div className="suggestions">
@@ -370,10 +381,10 @@ export function Assistant() {
           {chat.messages.map((m, i) => (
             <article className={`message ${m.role}`} key={i}>
               <span className="message-avatar">
-                <Icon name={m.role === 'user' ? 'user' : 'spark'} size={18} />
+                {m.role === 'user' ? <Icon name="user" size={18} /> : <Mascot size={28} />}
               </span>
               <div>
-                <strong>{m.role === 'user' ? 'You' : 'Stack assistant'}</strong>
+                <strong>{m.role === 'user' ? 'You' : 'Dogfood assistant'}</strong>
                 <p>{m.text}</p>
               </div>
             </article>
@@ -407,6 +418,7 @@ export function Assistant() {
                 ],
               }));
               setDraft('');
+              setCompleted((value) => value + 1);
             });
           }}
         >

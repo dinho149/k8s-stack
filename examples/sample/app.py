@@ -16,7 +16,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 code, message = 503, 'database unavailable'
         elif self.path != '/healthz':
-            message = 'Stack sample / revision ' + os.environ.get('REVISION', 'unknown')
+            message = 'Dogfood sample / revision ' + os.environ.get('REVISION', 'unknown')
         self.send_response(code)
         self.send_header('Content-Type', 'text/plain')
         self.end_headers()

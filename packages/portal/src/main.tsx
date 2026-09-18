@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Route } from 'react-router-dom';
 import { createApp } from '@backstage/app-defaults';
 import { FlatRoutes, OAuth2 } from '@backstage/core-app-api';
-import { StackSignIn, oidcAuthApiRef } from './auth';
+import { DogfoodSignIn, oidcAuthApiRef } from './auth';
 import {
   createApiFactory,
   discoveryApiRef,
@@ -15,6 +15,8 @@ import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
 import '@fontsource/ibm-plex-sans/latin-600.css';
 import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/nunito-sans/latin-700.css';
+import '@fontsource/nunito-sans/latin-900.css';
 import './style.css';
 
 const local = import.meta.env.VITE_LOCAL_DEVELOPMENT === 'true';
@@ -41,14 +43,14 @@ const app = createApp({
     {
       context: 'platform',
       data: {
-        app: { title: 'Stack', baseUrl: window.location.origin },
+        app: { title: 'Dogfood', baseUrl: window.location.origin },
         backend: { baseUrl: import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:7007' },
         auth: { environment: 'development', providers: local ? { guest: {} } : { oidc: {} } },
       },
     },
   ],
   components: {
-    SignInPage: (props) => <StackSignIn {...props} local={local} />,
+    SignInPage: (props) => <DogfoodSignIn {...props} local={local} />,
   },
 });
 const Router = app.getRouter();

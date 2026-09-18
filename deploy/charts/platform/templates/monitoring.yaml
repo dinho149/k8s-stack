@@ -2,12 +2,12 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: stack-lifecycle
+  name: dogfood-lifecycle
   labels:
     release: {{ .Values.monitoring.release | quote }}
 spec:
   selector:
-    matchLabels: {app: stack-lifecycle}
+    matchLabels: {app: dogfood-lifecycle}
   endpoints:
     - port: http
       path: /metrics

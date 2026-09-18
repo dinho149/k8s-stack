@@ -114,7 +114,7 @@ resource "google_project_iam_member" "agent" {
 resource "google_service_account_iam_member" "agent" {
   service_account_id = google_service_account.agent.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project}.svc.id.goog[platform/stack-agent]"
+  member             = "serviceAccount:${var.project}.svc.id.goog[platform/dogfood-agent]"
 }
 output "cluster_name" { value = google_container_cluster.platform.name }
 output "agent_service_account" { value = google_service_account.agent.email }

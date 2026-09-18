@@ -62,7 +62,7 @@ const platformPlugin = createBackendPlugin({
               method,
               headers: {
                 Authorization: `Bearer ${serviceToken}`,
-                'X-Stack-Subject': subject,
+                'X-Dogfood-Subject': subject,
                 'Content-Type': 'application/json',
                 'Idempotency-Key': req.header('Idempotency-Key') ?? '',
               },
@@ -119,7 +119,7 @@ const scaffoldModule = createBackendModule({
                   headers: {
                     'Content-Type': 'application/json',
                     Authorization: 'Bearer ' + config.getString('platform.serviceToken'),
-                    'X-Stack-Subject': mapping.getString('subject'),
+                    'X-Dogfood-Subject': mapping.getString('subject'),
                     'Idempotency-Key': ctx.task.id,
                   },
                   body: JSON.stringify({
@@ -145,7 +145,7 @@ const scaffoldModule = createBackendModule({
 const backend = createBackend();
 backend.add(import('@backstage/plugin-auth-backend'));
 backend.add(import('@backstage/plugin-auth-backend-module-oidc-provider'));
-if (process.env.STACK_LOCAL_DEVELOPMENT === '1')
+if (process.env.DOGFOOD_LOCAL_DEVELOPMENT === '1')
   backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 backend.add(import('@backstage/plugin-catalog-backend'));
 backend.add(import('@backstage/plugin-scaffolder-backend'));

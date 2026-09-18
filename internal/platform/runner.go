@@ -33,7 +33,7 @@ func (d KubernetesDriver) Run(ctx context.Context, op Operation, e Environment, 
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = d.Root
-	cmd.Env = append(os.Environ(), "STACK_CONTEXT="+d.Config.Context, "STACK_DOMAIN="+d.Config.Domain, "STACK_PROFILE="+d.Config.Profile, "STACK_REPOSITORY="+d.Config.Repository)
+	cmd.Env = append(os.Environ(), "DOGFOOD_CONTEXT="+d.Config.Context, "DOGFOOD_DOMAIN="+d.Config.Domain, "DOGFOOD_PROFILE="+d.Config.Profile, "DOGFOOD_REPOSITORY="+d.Config.Repository)
 	// Scripts only emit known phase markers on stdout. Diagnostic stderr stays on the server.
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -55,8 +55,8 @@ func (p *phaseWriter) Write(b []byte) (int, error) {
 	for strings.Contains(p.pending, "\n") {
 		line, rest, _ := strings.Cut(p.pending, "\n")
 		p.pending = rest
-		if strings.HasPrefix(line, "STACK_PHASE=") {
-			phase := strings.TrimPrefix(line, "STACK_PHASE=")
+		if strings.HasPrefix(line, "DOGFOOD_PHASE=") {
+			phase := strings.TrimPrefix(line, "DOGFOOD_PHASE=")
 			if phase == "cluster-ready" || phase == "platform-ready" || phase == "application-ready" {
 				if e := p.phase(phase); e != nil {
 					return len(b), e

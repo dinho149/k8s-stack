@@ -30,7 +30,7 @@ This is a deliberate initial implementation constraint: controller/database HA a
 
 ## Auth
 
-Direct API users authenticate through configured OIDC issuer/audience. Local development uses a random token and a loopback-only listener. Trusted Backstage/chat/CI gateways use a service token and a server-validated subject mapping. `X-Stack-Subject` is never accepted without the service credential. Keep `/internal/*` inaccessible to public ingress; only expose the three `/chat/*` paths externally. Service credentials must be rotated and stored through an external secret store.
+Direct API users authenticate through configured OIDC issuer/audience. Local development uses a random token and a loopback-only listener. Trusted Backstage/chat/CI gateways use a service token and a server-validated subject mapping. `X-Dogfood-Subject` is never accepted without the service credential. Keep `/internal/*` inaccessible to public ingress; only expose the three `/chat/*` paths externally. Service credentials must be rotated and stored through an external secret store.
 
 Subjects and team roles are currently explicit configuration. Account linking connects a verified Slack/Teams/Google identity to that subject through a short-lived, single-use code from an authenticated portal session. Automatic GitHub organization membership synchronization is not yet implemented; remove/update mappings and restart the service to revoke access. The server rechecks mappings on every request.
 

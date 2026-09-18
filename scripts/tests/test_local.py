@@ -19,9 +19,9 @@ class LocalTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.stack = self.root / '.stack'
-        self.stack.mkdir()
-        self.patches = [patch.object(local, 'ROOT', self.root), patch.object(local, 'STATE', self.stack), patch.object(local, 'LOGS', self.stack / 'logs'), patch.object(local, 'ENV', {'PATH': os.environ['PATH']}), patch.object(local, 'COLOR', False), patch.object(local, 'CHILDREN', {}), patch.object(local, 'container', return_value=None)]
+        self.dogfood = self.root / '.dogfood'
+        self.dogfood.mkdir()
+        self.patches = [patch.object(local, 'ROOT', self.root), patch.object(local, 'STATE', self.dogfood), patch.object(local, 'LOGS', self.dogfood / 'logs'), patch.object(local, 'ENV', {'PATH': os.environ['PATH']}), patch.object(local, 'COLOR', False), patch.object(local, 'CHILDREN', {}), patch.object(local, 'container', return_value=None)]
         for item in self.patches:
             item.start()
         self.addCleanup(self.temp.cleanup)
@@ -58,19 +58,19 @@ class LocalTests(unittest.TestCase):
 
     def test_credentials_are_private_and_stable(self):
         local.credentials(create=True)
-        first = (self.stack / 'local.env').read_text()
+        first = (self.dogfood / 'local.env').read_text()
         local.credentials(create=True)
-        self.assertEqual(first, (self.stack / 'local.env').read_text())
-        self.assertEqual((self.stack / 'local.env').stat().st_mode & 0o777, 0o600)
-        self.assertIn('STACK_LOCAL_TOKEN', local.ENV)
+        self.assertEqual(first, (self.dogfood / 'local.env').read_text())
+        self.assertEqual((self.dogfood / 'local.env').stat().st_mode & 0o777, 0o600)
+        self.assertIn('DOGFOOD_LOCAL_TOKEN', local.ENV)
 
     def test_env_is_data_not_shell(self):
-        (self.root / '.env').write_text("VALUE='$(touch /tmp/never-execute-stack)'\n")
+        (self.root / '.env').write_text("VALUE='$(touch /tmp/never-execute-dogfood)'\n")
         local.credentials()
-        self.assertEqual(local.ENV['VALUE'], '$(touch /tmp/never-execute-stack)')
+        self.assertEqual(local.ENV['VALUE'], '$(touch /tmp/never-execute-dogfood)')
 
     def test_secret_redaction(self):
-        local.ENV['STACK_LOCAL_TOKEN'] = 'a-very-secret-token'
+        local.ENV['DOGFOOD_LOCAL_TOKEN'] = 'a-very-secret-token'
         self.assertEqual(local.redact('Bearer a-very-secret-token'), 'Bearer [redacted]')
 
     def test_checks_run_while_lifecycle_lock_is_held(self):
@@ -111,7 +111,7 @@ class LocalTests(unittest.TestCase):
     def test_unmanaged_container_rejected(self):
         with patch.object(local, 'container', return_value={'Config': {'Labels': {}}}):
             with self.assertRaisesRegex(RuntimeError, 'unmanaged'):
-                local.owned('stack-registry')
+                local.owned('dogfood-registry')
 
     def test_partial_startup_stops_only_new_services(self):
         with patch.object(local, 'credentials'), patch.object(local, 'build_cli'), patch.object(local, 'database'), patch.object(local, 'start', side_effect=[False, True, RuntimeError('failed')]), patch.object(local, 'stop_service') as stop:
@@ -139,28 +139,28 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(request.call_args.args, ('environments/demo/extend', {'mode': 'add', 'minutes': 10, 'generation': 7}))
 
     def test_cleanup_failure_does_not_delete_cluster(self):
-        with patch.object(local, 'local_config'), patch.object(local, 'owned'), patch.object(local, 'capture', return_value='stack-local'), patch.object(local, 'credentials'), patch.object(local, 'alive', return_value=True), patch.object(local, 'request', side_effect=RuntimeError('offline')), patch.object(local, 'run') as run:
+        with patch.object(local, 'local_config'), patch.object(local, 'owned'), patch.object(local, 'capture', return_value='dogfood-local'), patch.object(local, 'credentials'), patch.object(local, 'alive', return_value=True), patch.object(local, 'request', side_effect=RuntimeError('offline')), patch.object(local, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'cluster retained'):
                 local.down()
         run.assert_not_called()
 
     def test_down_order_and_retained_data(self):
-        (self.stack / 'local.env').write_text('retained')
+        (self.dogfood / 'local.env').write_text('retained')
         events = []
         def request(path, body=None):
             events.append(path)
             if path == 'environments':
                 return [{'id': 'demo', 'status': 'ready'}, {'id': 'old', 'status': 'deleted'}]
             return {'id': 'operation'}
-        with patch.object(local, 'local_config'), patch.object(local, 'owned', return_value=True), patch.object(local, 'capture', return_value='stack-local'), patch.object(local, 'credentials'), patch.object(local, 'alive', return_value=True), patch.object(local, 'request', side_effect=request), patch.object(local, 'wait_operation', side_effect=lambda _: events.append('wait')), patch.object(local, 'stop_service', side_effect=lambda s: events.append('stop ' + s)), patch.object(local, 'run', side_effect=lambda label, args: events.append(args)):
+        with patch.object(local, 'local_config'), patch.object(local, 'owned', return_value=True), patch.object(local, 'capture', return_value='dogfood-local'), patch.object(local, 'credentials'), patch.object(local, 'alive', return_value=True), patch.object(local, 'request', side_effect=request), patch.object(local, 'wait_operation', side_effect=lambda _: events.append('wait')), patch.object(local, 'stop_service', side_effect=lambda s: events.append('stop ' + s)), patch.object(local, 'run', side_effect=lambda label, args: events.append(args)):
             local.down()
         self.assertLess(events.index('wait'), events.index('stop api'))
-        self.assertEqual(events[-1], ['kind', 'delete', 'cluster', '--name', 'stack-local'])
-        self.assertTrue((self.stack / 'local.env').exists())
+        self.assertEqual(events[-1], ['kind', 'delete', 'cluster', '--name', 'dogfood-local'])
+        self.assertTrue((self.dogfood / 'local.env').exists())
         self.assertFalse(any('old' in str(e) for e in events))
 
     def test_reset_refuses_untracked_process(self):
-        local.ENV['CONFIRM'] = 'stack-local'
+        local.ENV['CONFIRM'] = 'dogfood-local'
         with patch.object(local, 'local_config'), patch.object(local, 'port_busy', return_value=True), patch.object(local, 'alive', return_value=False), patch.object(local, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'untracked'):
                 local.down(reset=True)
@@ -168,13 +168,13 @@ class LocalTests(unittest.TestCase):
 
     def test_reset_requires_exact_confirmation(self):
         with patch.object(local, 'local_config'), patch.object(local, 'owned') as owned:
-            with self.assertRaisesRegex(RuntimeError, 'CONFIRM=stack-local'):
+            with self.assertRaisesRegex(RuntimeError, 'CONFIRM=dogfood-local'):
                 local.down(reset=True)
         owned.assert_not_called()
 
     def test_foreign_config_rejected(self):
         with patch.object(local, 'build_cli'), patch.object(local, 'capture', return_value=json.dumps({'provider': 'aws'})):
-            with self.assertRaisesRegex(RuntimeError, 'default stack-local'):
+            with self.assertRaisesRegex(RuntimeError, 'default dogfood-local'):
                 local.local_config()
 
     def test_subprocess_failure_keeps_log_and_exit(self):
@@ -199,7 +199,22 @@ class LocalTests(unittest.TestCase):
         with patch.object(local, 'container', return_value={'Config': {}}), patch.object(local.shutil, 'which', return_value='/bin/docker'):
             with self.assertRaisesRegex(RuntimeError, 'credentials'):
                 local.credentials(create=True)
-        self.assertFalse((self.stack / 'local.env').exists())
+        self.assertFalse((self.dogfood / 'local.env').exists())
+
+    def test_fresh_credentials_leave_legacy_state_untouched(self):
+        legacy = self.root / '.stack'
+        legacy.mkdir()
+        old = legacy / 'local.env'
+        old.write_text('STACK_LOCAL_TOKEN=retained-secret\n')
+        local.credentials(create=True)
+        self.assertEqual(old.read_text(), 'STACK_LOCAL_TOKEN=retained-secret\n')
+        self.assertIn('DOGFOOD_LOCAL_TOKEN', local.ENV)
+        self.assertNotIn('STACK_LOCAL_TOKEN', local.ENV)
+
+    def test_legacy_container_label_is_not_adopted(self):
+        with patch.object(local, 'container', return_value={'Config': {'Labels': {'stack.platform/managed': 'true'}}}):
+            with self.assertRaisesRegex(RuntimeError, 'unmanaged'):
+                local.owned('dogfood-registry')
 
     def test_real_background_service_start_and_stop(self):
         import socket

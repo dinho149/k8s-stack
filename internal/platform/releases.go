@@ -30,8 +30,8 @@ func (s *Store) RequestPromotion(ctx context.Context, u Identity, r PromotionReq
 	if u.Role != "admin" && (u.Role != "developer" || r.Target != "dev") {
 		return nil, ErrForbidden
 	}
-	repo := os.Getenv("STACK_GITHUB_REPOSITORY")
-	token := os.Getenv("STACK_GITHUB_TOKEN")
+	repo := os.Getenv("DOGFOOD_GITHUB_REPOSITORY")
+	token := os.Getenv("DOGFOOD_GITHUB_TOKEN")
 	if !repoRE.MatchString(repo) || token == "" {
 		return nil, errors.New("release integration is not configured")
 	}

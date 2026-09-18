@@ -1,4 +1,4 @@
-.stack/
+.dogfood/
 .env
 .env.*
 !.env.example
@@ -17,3 +17,6 @@ __pycache__/
 
 playwright-report/
 test-results/
+
+# Retained legacy state may contain credentials.
+.stack/

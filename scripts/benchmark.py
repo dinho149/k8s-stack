@@ -14,10 +14,10 @@ p.add_argument('--image',required=True)
 p.add_argument('--revision',required=True)
 p.add_argument('--runs',type=int,default=30)
 p.add_argument('--concurrency',type=int,default=5)
-p.add_argument('--output',default='.stack/benchmark.json')
+p.add_argument('--output',default='.dogfood/benchmark.json')
 args=p.parse_args()
-base=os.environ.get('STACK_API_URL','http://127.0.0.1:8088')
-token=os.environ.get('STACK_TOKEN') or os.environ['STACK_LOCAL_TOKEN']
+base=os.environ.get('DOGFOOD_API_URL','http://127.0.0.1:8088')
+token=os.environ.get('DOGFOOD_TOKEN') or os.environ['DOGFOOD_LOCAL_TOKEN']
 
 def request(path,method='GET',body=None):
     req=urllib.request.Request(base+path,method=method,data=json.dumps(body).encode() if body is not None else None,

@@ -1,21 +1,21 @@
 {{- if .Values.portal.enabled }}
 apiVersion: v1
 kind: ConfigMap
-metadata: {name: stack-backstage-config}
+metadata: {name: dogfood-backstage-config}
 data:
   app-config.yaml: |
     {{- toYaml .Values.portal.config | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: stack-backstage}
+metadata: {name: dogfood-backstage}
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: stack-backstage}
+    matchLabels: {app: dogfood-backstage}
   template:
     metadata:
-      labels: {app: stack-backstage}
+      labels: {app: dogfood-backstage}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -37,25 +37,25 @@ spec:
             - {name: config, mountPath: /config, readOnly: true}
       volumes:
         - name: config
-          configMap: {name: stack-backstage-config}
+          configMap: {name: dogfood-backstage-config}
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: stack-backstage}
+metadata: {name: dogfood-backstage}
 spec:
-  selector: {app: stack-backstage}
+  selector: {app: dogfood-backstage}
   ports: [{port: 7007, targetPort: 7007}]
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: stack-portal}
+metadata: {name: dogfood-portal}
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: stack-portal}
+    matchLabels: {app: dogfood-portal}
   template:
     metadata:
-      labels: {app: stack-portal}
+      labels: {app: dogfood-portal}
     spec:
       automountServiceAccountToken: false
       containers:
@@ -71,9 +71,9 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: stack-portal}
+metadata: {name: dogfood-portal}
 spec:
-  selector: {app: stack-portal}
+  selector: {app: dogfood-portal}
   ports: [{port: 80, targetPort: 8080}]
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -83,5 +83,5 @@ spec:
   parentRefs: [{name: platform, namespace: envoy-gateway-system}]
   hostnames: [{{ .Values.portal.hostname | quote }}]
   rules:
-    - backendRefs: [{name: stack-portal, port: 80}]
+    - backendRefs: [{name: dogfood-portal, port: 80}]
 {{- end }}

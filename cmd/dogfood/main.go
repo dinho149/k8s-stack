@@ -23,13 +23,13 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "stack:", err)
+		fmt.Fprintln(os.Stderr, "dogfood:", err)
 		os.Exit(1)
 	}
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: stack <init|config|doctor|serve|up|status|down|benchmark> [options]")
+		return errors.New("usage: dogfood <init|config|doctor|serve|up|status|down|benchmark> [options]")
 	}
 	command := os.Args[1]
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -108,7 +108,7 @@ func run() error {
 			cmd := exec.CommandContext(ctx, "bash", filepath.Join(root, "scripts", "bootstrap.sh"), *config)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			cmd.Env = append(os.Environ(), "STACK_NAME="+c.Name, "STACK_PROVIDER="+c.Provider, "STACK_CONTEXT="+c.Context, "STACK_PROFILE="+c.Profile, "STACK_DOMAIN="+c.Domain)
+			cmd.Env = append(os.Environ(), "DOGFOOD_NAME="+c.Name, "DOGFOOD_PROVIDER="+c.Provider, "DOGFOOD_CONTEXT="+c.Context, "DOGFOOD_PROFILE="+c.Profile, "DOGFOOD_DOMAIN="+c.Domain)
 			return cmd.Run()
 		}
 		return request(c, "POST", "/v1/environments", map[string]any{"id": *name, "image": *image, "revision": *revision, "profile": "preview", "warm": true}, *name+":"+*revision)
@@ -172,7 +172,7 @@ func run() error {
 	}
 }
 func request(c platform.Config, method, path string, body any, key string) error {
-	base := os.Getenv("STACK_API_URL")
+	base := os.Getenv("DOGFOOD_API_URL")
 	if base == "" {
 		base = "http://" + c.Listen
 	}
@@ -184,9 +184,9 @@ func request(c platform.Config, method, path string, body any, key string) error
 	if e != nil {
 		return e
 	}
-	token := os.Getenv("STACK_TOKEN")
+	token := os.Getenv("DOGFOOD_TOKEN")
 	if token == "" {
-		token = os.Getenv("STACK_LOCAL_TOKEN")
+		token = os.Getenv("DOGFOOD_LOCAL_TOKEN")
 	}
 	r.Header.Set("Authorization", "Bearer "+token)
 	r.Header.Set("Content-Type", "application/json")

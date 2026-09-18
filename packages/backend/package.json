@@ -1,5 +1,5 @@
 {
-  "name": "@stack/backend",
+  "name": "@dogfood/backend",
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",

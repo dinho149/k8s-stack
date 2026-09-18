@@ -1,7 +1,7 @@
 # This controller belongs on a dedicated preview host, never on a production workload cluster.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: stack-preview-controller}
+metadata: {name: dogfood-preview-controller}
 rules:
   - apiGroups: ['']
     resources: [namespaces, services, endpoints, pods, pods/log, pods/portforward, secrets, configmaps, serviceaccounts, persistentvolumeclaims, resourcequotas, limitranges, events]
@@ -33,9 +33,9 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: stack-preview-controller}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: stack-preview-controller}
+metadata: {name: dogfood-preview-controller}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: dogfood-preview-controller}
 subjects:
   - kind: ServiceAccount
-    name: stack-lifecycle
+    name: dogfood-lifecycle
     namespace: {{ .Release.Namespace }}

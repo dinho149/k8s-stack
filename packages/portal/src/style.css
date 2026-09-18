@@ -1,25 +1,27 @@
 :root {
   font-family: 'IBM Plex Sans', sans-serif;
-  color: #20283a;
-  background: #f6f7fb;
+  color: #18243b;
+  background: #f3f6fc;
   font-synthesis: none;
-  --canvas: #f6f7fb;
+  --canvas: #f3f6fc;
   --surface: #fff;
-  --surface-subtle: #f9f9fc;
-  --ink: #20283a;
-  --muted: #647084;
-  --border: #e2e5ee;
-  --iris: #6554c0;
-  --iris-hover: #5140a4;
-  --iris-soft: #eeebfa;
-  --slate: #253247;
+  --surface-subtle: #f7f9fd;
+  --ink: #18243b;
+  --muted: #5c6b82;
+  --border: #dce3ef;
+  --accent: #2455db;
+  --accent-hover: #1943b5;
+  --accent-soft: #eaf0ff;
+  --masthead: #18243b;
   --green: #26705a;
   --green-soft: #e8f4ed;
   --amber: #8b6415;
   --amber-soft: #fff3d9;
   --red: #af3948;
   --red-soft: #fcecef;
-  --shadow: 0 16px 60px #20283a20;
+  --shadow: 0 16px 60px #18243b20;
+  --gold: #f4bd42;
+  --heading-font: 'Nunito Sans', sans-serif;
   color-scheme: light;
 }
 :root[data-theme='dark'] {
@@ -29,10 +31,10 @@
   --ink: #edf0f8;
   --muted: #acb7cb;
   --border: #39465c;
-  --iris: #b5a6ff;
-  --iris-hover: #c9bdff;
-  --iris-soft: #383451;
-  --slate: #151d2c;
+  --accent: #9cb9ff;
+  --accent-hover: #bfd0ff;
+  --accent-soft: #273959;
+  --masthead: #151d2c;
   --green: #8fd6b1;
   --green-soft: #253f39;
   --amber: #e8c47d;
@@ -65,7 +67,7 @@ summary {
   outline-offset: 4px;
 }
 a {
-  color: var(--iris);
+  color: var(--accent);
   text-decoration: none;
 }
 a:hover {
@@ -103,16 +105,16 @@ button:disabled {
   cursor: not-allowed;
 }
 .primary {
-  background: var(--iris);
-  border-color: var(--iris);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 :root[data-theme='dark'] .primary {
-  color: #20243b;
+  color: #18243b;
 }
 .primary:hover {
-  background: var(--iris-hover);
-  border-color: var(--iris-hover);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .danger {
   background: var(--red);
@@ -135,21 +137,27 @@ h3,
 p {
   margin: 0;
 }
+h1,
+h2,
+h3 {
+  font-family: var(--heading-font);
+  font-weight: 700;
+}
 h1 {
   font-size: 36px;
   line-height: 1.2;
-  font-weight: 500;
-  letter-spacing: -1.25px;
+  font-weight: 700;
+  letter-spacing: -1.1px;
 }
 h2 {
   font-size: 19px;
   line-height: 1.4;
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: -0.3px;
 }
 h3 {
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 700;
 }
 p {
   line-height: 1.65;
@@ -214,7 +222,7 @@ svg {
   flex-direction: column;
 }
 .masthead {
-  background: var(--slate);
+  background: var(--masthead);
   color: #d8deeb;
 }
 .masthead-inner {
@@ -236,13 +244,17 @@ svg {
 .brand:hover {
   text-decoration: none;
 }
-.brand span {
+.brand .dog-wordmark {
+  font-family: var(--heading-font);
   font-size: 30px;
-  letter-spacing: -1.6px;
-  font-weight: 600;
+  letter-spacing: -1.4px;
+  font-weight: 900;
 }
-.brand svg {
-  color: #b8aaff;
+.brand {
+  border-radius: 8px;
+}
+.brand:focus-visible {
+  outline: 3px solid var(--gold);
 }
 .brand-divider {
   height: 25px;
@@ -285,7 +297,7 @@ svg {
   position: absolute;
   bottom: 0;
   height: 3px;
-  background: #b8aaff;
+  background: #f4bd42;
   left: 13px;
   right: 13px;
   border-radius: 3px 3px 0 0;
@@ -341,7 +353,7 @@ svg {
 .workspace-dot {
   width: 7px;
   height: 7px;
-  border: 2px solid var(--iris);
+  border: 2px solid var(--accent);
   border-radius: 2px;
 }
 .app-shell main {
@@ -425,21 +437,21 @@ svg {
 }
 .overview-intro {
   padding: 27px 30px;
-  background: var(--iris-soft);
+  background: var(--accent-soft);
   position: relative;
 }
 .workspace-symbol {
   position: absolute;
   right: 26px;
   top: 27px;
-  color: var(--iris);
-  opacity: 0.7;
+  color: var(--accent);
+  opacity: 1;
 }
 .overview-intro h2 {
   font-size: 25px;
   line-height: 1.3;
   letter-spacing: -0.65px;
-  padding-right: 36px;
+  padding-right: 55px;
 }
 .overview-intro p {
   color: var(--muted);
@@ -470,7 +482,7 @@ svg {
   border-left: 1px solid var(--border);
 }
 .overview-metrics a:hover strong {
-  color: var(--iris);
+  color: var(--accent);
 }
 .overview-metrics span {
   font-size: 13px;
@@ -533,7 +545,7 @@ svg {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
   border-radius: 9px;
-  color: var(--iris);
+  color: var(--accent);
   flex-shrink: 0;
 }
 .timeline {
@@ -564,7 +576,7 @@ svg {
   display: none;
 }
 .timeline li.complete:before {
-  background: var(--iris);
+  background: var(--accent);
   opacity: 0.4;
 }
 .timeline-node {
@@ -581,17 +593,17 @@ svg {
   margin-bottom: 13px;
 }
 .complete .timeline-node {
-  background: var(--iris);
-  border-color: var(--iris);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 :root[data-theme='dark'] .complete .timeline-node {
-  color: #20243b;
+  color: #18243b;
 }
 .current .timeline-node {
-  border: 2px solid var(--iris);
-  box-shadow: 0 0 0 4px var(--iris-soft);
-  color: var(--iris);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  color: var(--accent);
 }
 .timeline strong {
   display: block;
@@ -600,13 +612,13 @@ svg {
   font-size: 10px;
 }
 .target-panel {
-  background: var(--slate);
+  background: var(--masthead);
   border-radius: 12px;
   padding: 26px;
   color: #fff;
 }
 .target-panel > svg {
-  color: #bdadfb;
+  color: var(--gold);
   margin-bottom: 16px;
 }
 .target-panel h2 {
@@ -617,7 +629,7 @@ svg {
   line-height: 1.2;
   letter-spacing: -1px;
   margin: 19px 0 5px;
-  color: #d5caff;
+  color: var(--gold);
 }
 .target-number span {
   font-size: 20px;
@@ -673,7 +685,7 @@ svg {
   border-top: 1px solid var(--border);
 }
 .quick-link > svg:first-child {
-  color: var(--iris);
+  color: var(--accent);
 }
 .quick-link > svg:last-child {
   margin-left: auto;
@@ -768,7 +780,7 @@ label small {
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid var(--iris);
+  outline: 2px solid var(--accent);
   border-color: transparent;
 }
 form > label {
@@ -862,8 +874,8 @@ td small {
 .empty-icon {
   display: inline-grid;
   place-items: center;
-  background: var(--iris-soft);
-  color: var(--iris);
+  background: var(--accent-soft);
+  color: var(--accent);
   width: 62px;
   height: 62px;
   border-radius: 17px;
@@ -889,7 +901,7 @@ td small {
   height: 16px;
   display: inline-block;
   border: 2px solid var(--border);
-  border-top-color: var(--iris);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -899,7 +911,7 @@ td small {
   }
 }
 .alert {
-  background: var(--iris-soft);
+  background: var(--accent-soft);
   color: var(--ink);
   border-radius: 7px;
   padding: 15px 18px;
@@ -949,8 +961,8 @@ td small {
   padding-bottom: 17px;
 }
 .step-label .selected {
-  color: var(--iris);
-  border-bottom: 2px solid var(--iris);
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
 }
 .form-actions {
   display: flex;
@@ -967,7 +979,7 @@ td small {
   color: var(--muted);
 }
 .form-aside > svg {
-  color: var(--iris);
+  color: var(--accent);
   margin-bottom: 22px;
 }
 .form-aside h2 {
@@ -1082,7 +1094,7 @@ summary {
 }
 .link-code {
   padding: 18px;
-  background: var(--iris-soft);
+  background: var(--accent-soft);
   border-radius: 7px;
 }
 .link-code code {
@@ -1095,8 +1107,8 @@ summary {
 .section-icon {
   width: 44px;
   height: 44px;
-  background: var(--iris-soft);
-  color: var(--iris);
+  background: var(--accent-soft);
+  color: var(--accent);
   border-radius: 12px;
   display: inline-grid;
   place-items: center;
@@ -1145,8 +1157,8 @@ summary {
   width: 43px;
   height: 43px;
   border-radius: 10px;
-  background: var(--iris-soft);
-  color: var(--iris);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 19px;
   font-weight: 500;
   text-transform: capitalize;
@@ -1172,7 +1184,7 @@ summary {
   align-items: center;
   gap: 22px;
   padding: 25px;
-  background: var(--iris-soft);
+  background: var(--accent-soft);
   border-radius: 12px;
   margin-bottom: 25px;
 }
@@ -1257,7 +1269,7 @@ summary {
   padding: 25px 0;
 }
 .chat-welcome > svg {
-  color: var(--iris);
+  color: var(--accent);
   margin-bottom: 20px;
 }
 .chat-welcome h2 {
@@ -1321,7 +1333,7 @@ summary {
   background: var(--surface-subtle);
 }
 .message-avatar {
-  color: var(--iris);
+  color: var(--accent);
   padding-top: 2px;
 }
 .message strong {
@@ -1347,7 +1359,7 @@ summary {
   grid-template-columns: 1fr 1fr;
 }
 .signin-story {
-  background: #253247;
+  background: #18243b;
   color: #fff;
   padding: 50px 65px;
   display: flex;
@@ -1360,7 +1372,7 @@ summary {
 }
 .signin-story h1 {
   font-size: 64px;
-  font-weight: 400;
+  font-weight: 900;
   letter-spacing: -2.8px;
   line-height: 1.07;
 }
@@ -1369,19 +1381,14 @@ summary {
   color: #bdc7db;
   margin-top: 28px;
 }
-.signin-orbit {
+.signin-mascot {
+  width: 220px;
+  height: 220px;
   display: grid;
   place-items: center;
-  width: 165px;
-  height: 165px;
-  border: 1px solid #657087;
-  border-radius: 38px;
-  transform: rotate(-10deg);
-  margin-bottom: 55px;
-  color: #b8aaff;
-}
-.signin-orbit svg {
-  transform: rotate(10deg);
+  border-radius: 50%;
+  background: #2455db;
+  margin-bottom: 36px;
 }
 .signin-caption {
   font-size: 12px;
@@ -1547,11 +1554,12 @@ summary {
     padding: 0 20px;
     justify-content: space-between;
   }
-  .brand span {
+  .brand .dog-wordmark {
     font-size: 27px;
   }
   .brand svg {
-    width: 29px;
+    width: 36px;
+    height: 36px;
   }
   .mobile-menu {
     display: inline-flex;
@@ -1563,7 +1571,7 @@ summary {
     left: 0;
     right: 0;
     z-index: 20;
-    background: var(--slate);
+    background: var(--masthead);
     box-shadow: var(--shadow);
     padding: 12px 20px 20px;
   }
@@ -1808,6 +1816,15 @@ summary {
   .signin-story > div {
     padding: 40px 0 10px;
   }
+  .signin-mascot {
+    width: 110px;
+    height: 110px;
+    margin-bottom: 24px;
+  }
+  .signin-mascot svg {
+    width: 105px;
+    height: 105px;
+  }
   .signin-story h1 {
     font-size: 42px;
   }
@@ -1815,7 +1832,6 @@ summary {
     font-size: 14px;
     margin-top: 15px;
   }
-  .signin-orbit,
   .signin-caption {
     display: none;
   }
@@ -2009,4 +2025,93 @@ summary {
     margin-left: 0;
     justify-self: start;
   }
+}
+
+/* Dogfood motion is brief and tied to a greeting or an explicit interaction. */
+.dog-mascot {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.dog-head {
+  transform-origin: 64px 92px;
+}
+.dog-ear-left {
+  transform-origin: 40px 39px;
+}
+.dog-ear-right {
+  transform-origin: 88px 39px;
+}
+.dog-mascot[data-mood='greeting'] .dog-head {
+  animation: dog-greeting 1000ms ease-in-out 1;
+}
+.dog-mascot[data-mood='thinking'] .dog-head {
+  animation: dog-thinking 1100ms ease-in-out 1;
+}
+.dog-mascot[data-mood='success'] .dog-head {
+  animation: dog-nod 600ms ease-in-out 1;
+}
+.brand:hover .dog-ear-left,
+.brand:focus-visible .dog-ear-left {
+  animation: dog-ear-flick 550ms ease-in-out 1;
+}
+.chat-welcome > .dog-mascot {
+  margin-bottom: 16px;
+}
+.assistant-identity .section-icon {
+  background: transparent;
+}
+@keyframes dog-greeting {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  30% {
+    transform: rotate(-10deg);
+  }
+  65% {
+    transform: rotate(6deg);
+  }
+}
+@keyframes dog-thinking {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  45%,
+  65% {
+    transform: rotate(-8deg);
+  }
+}
+@keyframes dog-nod {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  45% {
+    transform: translateY(5px) rotate(4deg);
+  }
+}
+@keyframes dog-ear-flick {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  40% {
+    transform: rotate(18deg);
+  }
+  70% {
+    transform: rotate(-5deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dog-mascot g {
+    animation: none !important;
+  }
+}
+
+/* The welcome artwork and suggestions remain fully visible at narrow widths. */
+.chat-messages.chat-empty {
+  max-height: none;
 }

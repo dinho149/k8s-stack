@@ -32,9 +32,9 @@ type Inspector interface {
 }
 
 func NewAPI(ctx context.Context, s *Store, inspector Inspector) (*API, error) {
-	a := &API{Store: s, Inspector: inspector, serviceToken: os.Getenv("STACK_SERVICE_TOKEN"), localToken: os.Getenv("STACK_LOCAL_TOKEN")}
+	a := &API{Store: s, Inspector: inspector, serviceToken: os.Getenv("DOGFOOD_SERVICE_TOKEN"), localToken: os.Getenv("DOGFOOD_LOCAL_TOKEN")}
 	if a.serviceToken != "" && len(a.serviceToken) < 32 {
-		return nil, errors.New("STACK_SERVICE_TOKEN must contain at least 32 characters")
+		return nil, errors.New("DOGFOOD_SERVICE_TOKEN must contain at least 32 characters")
 	}
 	if s.Config.Auth.Issuer != "" {
 		p, e := oidc.NewProvider(ctx, s.Config.Auth.Issuer)
@@ -53,7 +53,7 @@ func NewAPI(ctx context.Context, s *Store, inspector Inspector) (*API, error) {
 			return nil, errors.New("local token authentication requires a loopback listener")
 		}
 		if len(a.localToken) < 32 {
-			return nil, errors.New("STACK_LOCAL_TOKEN must contain at least 32 characters")
+			return nil, errors.New("DOGFOOD_LOCAL_TOKEN must contain at least 32 characters")
 		}
 	}
 	if a.verifier == nil && a.localToken == "" && a.serviceToken == "" {
@@ -72,7 +72,7 @@ func equalSecret(a, b string) bool {
 func (a *API) auth(r *http.Request) (Identity, error) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if equalSecret(token, a.serviceToken) {
-		u, ok := a.Store.Config.Identity(r.Header.Get("X-Stack-Subject"))
+		u, ok := a.Store.Config.Identity(r.Header.Get("X-Dogfood-Subject"))
 		if !ok {
 			return Identity{}, ErrForbidden
 		}
