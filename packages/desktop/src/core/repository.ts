@@ -10,8 +10,13 @@ export function execute(
   args: string[],
   cwd: string,
   timeout = 30000,
+  signal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolveResult, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Cancelled'));
+      return;
+    }
     const proc = spawn(command, args, {
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -20,7 +25,13 @@ export function execute(
     let out = '',
       err = '',
       size = 0;
-    const timer = setTimeout(() => proc.kill('SIGTERM'), timeout);
+    const stop = () => {
+      proc.kill('SIGTERM');
+      const kill = setTimeout(() => proc.kill('SIGKILL'), 1500);
+      kill.unref();
+    };
+    signal?.addEventListener('abort', stop, { once: true });
+    const timer = setTimeout(stop, timeout);
     proc.stdout.on('data', (data) => {
       size += data.length;
       if (size > 20_000_000) proc.kill('SIGTERM');
@@ -30,14 +41,18 @@ export function execute(
       if (err.length < 100_000) err += data;
     });
     proc.on('error', (error) => {
+      signal?.removeEventListener('abort', stop);
       clearTimeout(timer);
       reject(error);
     });
-    proc.on('close', (code, signal) => {
+    proc.on('close', (code, exitSignal) => {
+      signal?.removeEventListener('abort', stop);
       clearTimeout(timer);
       if (code === 0) resolveResult(out);
       else
-        reject(new Error(`${command} ${args[0] ?? ''}: ${err.trim() || signal || 'exit ' + code}`));
+        reject(
+          new Error(`${command} ${args[0] ?? ''}: ${err.trim() || exitSignal || 'exit ' + code}`),
+        );
     });
   });
 }

@@ -1,10 +1,9 @@
 import { mkdir, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { git } from './repository';
-export async function createStarter(path: string) {
-  await mkdir(path, { recursive: true });
-  if ((await readdir(path)).length)
-    throw new Error('Choose an empty directory for the new application.');
+import { getStarter, type StarterId } from '../starters';
+import { backendFiles } from './starter-backends';
+function webFiles(typescript: boolean, react: boolean): Record<string, string> {
   const content: Record<string, string> = {
     'package.json': JSON.stringify(
       {
@@ -76,6 +75,60 @@ export async function createStarter(path: string) {
     'dogfood.yaml':
       'version: 1\nsetup:\n  - name: Install dependencies\n    command: npm\n    args: [install]\n  - name: Install test browser\n    command: npx\n    args: [playwright, install, chromium]\ndev:\n  name: Development server\n  command: npm\n  args: [run, dev, --, --host, 127.0.0.1, --port, "{port}"]\nchecks:\n  - name: Unit tests\n    command: npm\n    args: [test]\n  - name: Build and typecheck\n    command: npm\n    args: [run, build]\n  - name: Browser acceptance\n    command: npm\n    args: [run, "test:browser"]\n',
   };
+  if (!react) {
+    const pkg = JSON.parse(content['package.json']);
+    delete pkg.dependencies;
+    for (const name of ['@types/react', '@types/react-dom', '@vitejs/plugin-react'])
+      delete pkg.devDependencies[name];
+    content['package.json'] = JSON.stringify(pkg, null, 2);
+    delete content['src/main.tsx'];
+    content['src/main.ts'] =
+      "import { greeting } from './greeting';\nimport './style.css';\ndocument.getElementById('root')!.innerHTML = `<main><small>Made with Dogfood</small><h1>${greeting('world')}</h1><p>Your next idea starts here.</p></main>`;\n";
+    content['index.html'] = content['index.html'].replace('/src/main.tsx', '/src/main.ts');
+    content['vite.config.ts'] =
+      "import { defineConfig } from 'vite';\nexport default defineConfig({});\n";
+    const config = JSON.parse(content['tsconfig.json']);
+    delete config.compilerOptions.jsx;
+    content['tsconfig.json'] = JSON.stringify(config, null, 2);
+  }
+  if (!typescript) {
+    const pkg = JSON.parse(content['package.json']);
+    pkg.scripts.build = 'vite build';
+    delete pkg.scripts.typecheck;
+    for (const name of ['typescript', '@types/react', '@types/react-dom'])
+      delete pkg.devDependencies[name];
+    content['package.json'] = JSON.stringify(pkg, null, 2);
+    delete content['tsconfig.json'];
+    for (const file of Object.keys(content)) {
+      if (!/\.tsx?$/.test(file)) continue;
+      content[file.replace(/\.ts(x?)$/, '.js$1')] = content[file]
+        .replace(': string', '')
+        .replaceAll("getElementById('root')!", "getElementById('root')")
+        .replace('new Promise<number>', 'new Promise')
+        .replace('(server.address() as {port:number})', 'server.address()')
+        .replace('src/**/*.test.ts', 'src/**/*.test.js');
+      delete content[file];
+    }
+    content['index.html'] = content['index.html'].replace(/\.ts(x?)/g, '.js$1');
+    content['dogfood.yaml'] = content['dogfood.yaml'].replace('Build and typecheck', 'Build');
+  }
+  return content;
+}
+
+export async function createStarter(path: string, starterId?: StarterId) {
+  const starter = getStarter(starterId);
+  if (!path.trim()) throw new Error('Choose an empty destination directory.');
+  const content =
+    starter.language === 'Python' || starter.language === 'Go'
+      ? backendFiles(starter.language)
+      : webFiles(starter.language === 'TypeScript', starter.framework === 'React');
+  content['AGENTS.md'] =
+    `# Project instructions\n\nUse ${starter.language} and ${starter.framework}. Keep changes focused on the approved task. Run the checks in dogfood.yaml. Add meaningful tests for new behaviour. Never commit secrets.\n`;
+  content['README.md'] =
+    `# My application\n\n${starter.description}\n\nRequires ${starter.requires}.\n\nOpen this project in Dogfood, review Project settings, create a task, and run setup in its worktree. Run locally starts an isolated development server. The setup, development, and check commands are listed in dogfood.yaml. Dependencies are installed during setup, not project creation.\n`;
+  await mkdir(path, { recursive: true });
+  if ((await readdir(path)).length)
+    throw new Error('Choose an empty directory for the new application.');
   for (const [file, text] of Object.entries(content)) {
     await mkdir(join(path, file, '..'), { recursive: true });
     await writeFile(join(path, file), text);

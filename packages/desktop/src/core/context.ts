@@ -31,7 +31,7 @@ export class ContextBroker {
   async package(root: string, query: string) {
     const inventory = await files(root);
     const context: string[] = [];
-    for (const path of ['AGENTS.md', 'CLAUDE.md', 'README.md']) {
+    for (const path of ['AGENTS.md', 'CLAUDE.md', 'README.md', 'REFERENCE.md']) {
       try {
         const text = await readSource(root, path);
         context.push(
@@ -55,6 +55,7 @@ export class ContextBroker {
     const pathsToHash = new Set([
       'AGENTS.md',
       'CLAUDE.md',
+      'REFERENCE.md',
       ...(await files(root)).filter((path) => /(^|\/)(AGENTS|CLAUDE)\.md$/.test(path)),
     ]);
     for (const path of pathsToHash) {

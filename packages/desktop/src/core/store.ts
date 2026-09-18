@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, writeFileSync, renameSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Artifact, Snapshot, Settings } from '../shared';
+import type { Artifact, Snapshot, Settings, Project, Task, Idea, Run, Usage } from '../shared';
 import { defaultSettings } from '../shared';
 
 export const now = () => new Date().toISOString();
@@ -18,6 +18,7 @@ const tables = [
   'settings',
   'events',
   'reservations',
+  'creations',
 ] as const;
 export type Table = (typeof tables)[number];
 export class Store {
@@ -77,16 +78,21 @@ export class Store {
     return { ...defaultSettings, ...this.get<Settings>('settings', 'global') };
   }
   snapshot(): Omit<Snapshot, 'approvals'> {
+    const projects = this.all<Project>('projects').filter((project) => !project.removedAt);
+    const projectIds = new Set(projects.map((project) => project.id));
+    const tasks = this.all<Task>('tasks').filter((task) => projectIds.has(task.projectId));
+    const taskIds = new Set(tasks.map((task) => task.id));
     return {
-      projects: this.all('projects'),
-      ideas: this.all('ideas'),
-      tasks: this.all('tasks'),
-      runs: this.all('runs'),
-      artifacts: this.all('artifacts'),
-      usage: this.all('usage'),
+      projects,
+      ideas: this.all<Idea>('ideas').filter((idea) => projectIds.has(idea.projectId)),
+      tasks,
+      runs: this.all<Run>('runs').filter((run) => taskIds.has(run.taskId)),
+      artifacts: this.all<Artifact>('artifacts').filter((artifact) => taskIds.has(artifact.taskId)),
+      usage: this.all<Usage>('usage').filter((usage) => projectIds.has(usage.projectId)),
       settings: this.settings(),
     };
   }
+
   artifact(
     taskId: string,
     kind: string,

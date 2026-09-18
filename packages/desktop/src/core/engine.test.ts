@@ -575,3 +575,127 @@ test('daily project headroom is passed to the external harness budget', async (t
     BudgetExceeded,
   );
 });
+
+test('workspace rename, removal and reopening preserve repository, worktrees and history', async (t) => {
+  const { root, engine, store, project, repo } = await fixture(t);
+  const task = engine.task(project.id, 'Keep my work', 'Important changes');
+  const prepared = await engine.prepare(task);
+  await writeFile(join(prepared.worktree!, 'unfinished.txt'), 'uncommitted work');
+  store.artifact(task.id, 'test', 'Saved evidence', 'keep this evidence');
+  const renamed = (await engine.dispatch('project.rename', {
+    id: project.id,
+    name: '  My workspace  ',
+  })) as Project;
+  assert.equal(renamed.name, 'My workspace');
+  assert.equal(renamed.path, project.path);
+  await assert.rejects(engine.dispatch('project.rename', { id: project.id, name: '  ' }));
+  await engine.dispatch('project.remove', { id: project.id });
+  assert.equal(engine.snapshot().projects.length, 0);
+  assert.equal(engine.snapshot().tasks.length, 0);
+  assert.equal(engine.snapshot().artifacts.length, 0);
+  assert.equal(await readFile(join(repo, 'app.txt'), 'utf8'), 'initial');
+  assert.equal(
+    await readFile(join(prepared.worktree!, 'unfinished.txt'), 'utf8'),
+    'uncommitted work',
+  );
+  assert.equal(store.all<Task>('tasks').length, 1);
+  await assert.rejects(engine.dispatch('project.files', { id: project.id }), /was removed/);
+  await assert.rejects(engine.prepare(prepared), /was removed/);
+  await assert.rejects(
+    engine.dispatch('task.action', { id: task.id, action: 'prepare' }),
+    /was removed/,
+  );
+  const reopenedStore = new Store(join(root, 'state'));
+  try {
+    assert.equal(reopenedStore.snapshot().projects.length, 0);
+  } finally {
+    reopenedStore.close();
+  }
+  const restored = (await engine.dispatch('project.add', { path: repo })) as Project;
+  assert.equal(restored.id, project.id);
+  assert.equal(restored.name, 'My workspace');
+  assert.equal(engine.snapshot().projects.length, 1);
+  assert.equal(engine.snapshot().tasks.length, 1);
+  assert.equal(engine.snapshot().artifacts.length, 1);
+});
+
+test('workspace removal refuses active tasks and local applications', async (t) => {
+  const { engine, project } = await fixture(t);
+  const task = engine.task(project.id, 'Busy task', '');
+  engine.active.set(task.id, { controller: new AbortController() });
+  await assert.rejects(engine.dispatch('project.remove', { id: project.id }), /Stop active tasks/);
+  engine.active.delete(task.id);
+  engine.runner.apps.set(task.id, { url: 'http://127.0.0.1:1234', port: 1234, stop: () => {} });
+  await assert.rejects(engine.dispatch('project.remove', { id: project.id }), /Stop active tasks/);
+  engine.runner.apps.delete(task.id);
+  assert.equal(engine.snapshot().projects.length, 1);
+});
+
+test('workspace files can be edited before a task exists and reject stale or unsafe writes', async (t) => {
+  const { engine, project, repo, root } = await fixture(t);
+  const listed = (await engine.dispatch('project.files', { id: project.id })) as string[];
+  assert.ok(listed.includes('app.txt'));
+  const initial = (await engine.dispatch('project.read-file', {
+    id: project.id,
+    path: 'app.txt',
+  })) as { content: string; hash: string };
+  assert.equal(initial.content, 'initial');
+  await engine.dispatch('project.write-file', {
+    id: project.id,
+    path: 'app.txt',
+    hash: initial.hash,
+    content: 'edited',
+  });
+  assert.equal(await readFile(join(repo, 'app.txt'), 'utf8'), 'edited');
+  await assert.rejects(
+    engine.dispatch('project.write-file', {
+      id: project.id,
+      path: 'app.txt',
+      hash: initial.hash,
+      content: 'stale',
+    }),
+    /changed on disk/,
+  );
+  for (const path of ['../outside.txt', '.git/config']) {
+    await assert.rejects(
+      engine.dispatch('project.write-file', {
+        id: project.id,
+        path,
+        hash: hash(''),
+        content: 'bad',
+      }),
+    );
+  }
+  await writeFile(join(root, 'outside.txt'), 'outside');
+  await symlink(join(root, 'outside.txt'), join(repo, 'escape'));
+  await assert.rejects(
+    engine.dispatch('project.read-file', { id: project.id, path: 'escape' }),
+    /Symlink/,
+  );
+  await writeFile(join(repo, 'dogfood.yaml'), 'version: 1\n');
+  await symlink(join(repo, 'dogfood.yaml'), join(repo, 'config-link'));
+  for (const path of ['dogfood.yaml', './dogfood.yaml', 'config-link']) {
+    await assert.rejects(
+      engine.dispatch('project.write-file', {
+        id: project.id,
+        path,
+        hash: hash('version: 1\n'),
+        content: 'bad',
+      }),
+      /Project settings/,
+    );
+  }
+  const task = engine.task(project.id, 'Busy task', '');
+  engine.active.set(task.id, { controller: new AbortController() });
+  await assert.rejects(
+    engine.dispatch('project.write-file', {
+      id: project.id,
+      path: 'app.txt',
+      hash: hash('edited'),
+      content: 'busy',
+    }),
+    /Stop active tasks/,
+  );
+  engine.active.delete(task.id);
+  assert.equal(await readFile(join(repo, 'app.txt'), 'utf8'), 'edited');
+});

@@ -84,6 +84,7 @@ if (process.argv.includes('--mcp')) {
           hasPlatformToken: !!engine.secrets.platformToken,
         });
         engine.ledger.repriceUnknown();
+        engine.creations.repriceUnknown();
         engine.changed();
         result = true;
       } else if (data.method === 'terminal.open') {
@@ -150,7 +151,12 @@ if (process.argv.includes('--mcp')) {
         );
         result = destination;
       } else if (data.method === 'backup.restore') {
-        if (engine.active.size || engine.runner.apps.size || terminals.size)
+        if (
+          engine.active.size ||
+          engine.creations.active.size ||
+          engine.runner.apps.size ||
+          terminals.size
+        )
           throw new Error('Stop tasks, applications, and terminals before restoring.');
         const source = z.string().parse(params.path),
           database = join(source, 'dogfood.sqlite');
@@ -201,6 +207,15 @@ if (process.argv.includes('--mcp')) {
         );
         engine.changed();
       } else {
+        if (data.method === 'project.remove') {
+          const projectId = z.string().uuid().parse(params.id);
+          if (
+            [...terminals.values()].some(
+              (terminal) => store.require<Task>('tasks', terminal.taskId).projectId === projectId,
+            )
+          )
+            throw new Error('Close this workspace’s terminals before removing it.');
+        }
         if (data.method === 'task.action' && params.action !== 'pause') {
           for (const [key, terminal] of terminals)
             if (terminal.taskId === params.id) {

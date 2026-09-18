@@ -58,6 +58,7 @@ export type Project = {
   baseBranch: string;
   config: ProjectConfig;
   createdAt: string;
+  removedAt?: string;
 };
 export type Idea = {
   id: string;

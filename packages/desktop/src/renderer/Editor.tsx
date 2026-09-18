@@ -39,13 +39,21 @@ export function Editor({
       ? 'typescript'
       : /\.jsx?$/.test(path)
         ? 'javascript'
-        : path.endsWith('.json')
-          ? 'json'
-          : path.endsWith('.css')
-            ? 'css'
-            : path.endsWith('.md')
-              ? 'markdown'
-              : 'plaintext';
+        : path.endsWith('.py')
+          ? 'python'
+          : path.endsWith('.go')
+            ? 'go'
+            : path.endsWith('.html')
+              ? 'html'
+              : /\.ya?ml$/.test(path)
+                ? 'yaml'
+                : path.endsWith('.json')
+                  ? 'json'
+                  : path.endsWith('.css')
+                    ? 'css'
+                    : path.endsWith('.md')
+                      ? 'markdown'
+                      : 'plaintext';
     const instance = monaco.editor.create(element.current!, {
       value,
       language,

@@ -2,8 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Snapshot, Task, Project, ProjectConfig, Settings, Artifact, Idea } from '../shared';
 import { defaultSettings } from '../shared';
+import { starters, defaultStarterId, getStarter, type StarterId } from '../starters';
 import { Editor } from './Editor';
 import { Terminal } from './Terminal';
+import { ReferenceProject } from './ReferenceProject';
+import {
+  Workspaces,
+  WorkspaceOverview,
+  WorkspaceName,
+  WorkspaceFiles,
+  type WorkspaceDrafts,
+} from './Workspaces';
 import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-500.css';
 import '@fontsource/ibm-plex-sans/latin-600.css';
@@ -33,6 +42,7 @@ function Icon({ name }: { name: string }) {
     <span aria-hidden="true" className="icon">
       {{
         work: '▱',
+        workspaces: '▤',
         ideas: '◇',
         connections: '⌘',
         platform: '▥',
@@ -48,6 +58,8 @@ function Icon({ name }: { name: string }) {
   );
 }
 function App() {
+  const [loaded, setLoaded] = useState(false);
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<WorkspaceDrafts>({});
   const [state, setState] = useState(initial),
     [projectId, setProjectId] = useState(localStorage.getItem('dogfood-project') ?? ''),
     [taskId, setTaskId] = useState(localStorage.getItem('dogfood-task') ?? ''),
@@ -74,9 +86,12 @@ function App() {
     [pr, setPr] = useState<any>();
   const previewHost = useRef<HTMLDivElement>(null);
   const project = state.projects.find((p) => p.id === projectId),
-    task = state.tasks.find((t) => t.id === taskId);
+    task = state.tasks.find((t) => t.id === taskId && t.projectId === projectId);
   const active = state.activeTasks.includes(taskId);
-  const refresh = useCallback(async () => setState(await api.call<State>('snapshot')), []);
+  const refresh = useCallback(async () => {
+    setState(await api.call<State>('snapshot'));
+    setLoaded(true);
+  }, []);
   const act = useCallback(
     async <T,>(method: string, params: Record<string, unknown> = {}): Promise<T | undefined> => {
       setError('');
@@ -114,8 +129,17 @@ function App() {
     };
   }, [refresh]);
   useEffect(() => {
-    if (!projectId && state.projects[0]) setProjectId(state.projects[0].id);
-  }, [state.projects, projectId]);
+    if (!loaded) return;
+    if (!state.projects.some((project) => project.id === projectId)) {
+      setProjectId(state.projects[0]?.id ?? '');
+      setTaskId('');
+    } else if (
+      taskId &&
+      !state.tasks.some((task) => task.id === taskId && task.projectId === projectId)
+    ) {
+      setTaskId('');
+    }
+  }, [loaded, state.projects, state.tasks, projectId, taskId]);
   useEffect(() => {
     localStorage.setItem('dogfood-project', projectId);
   }, [projectId]);
@@ -241,6 +265,7 @@ function App() {
               onChange={(e) => {
                 setProjectId(e.target.value);
                 setTaskId('');
+                setView('overview');
               }}
             >
               <option value="">Choose a project</option>
@@ -257,7 +282,8 @@ function App() {
         </div>
         <nav>
           {[
-            ['work', 'Workspace'],
+            ['workspaces', 'Workspaces'],
+            ['work', 'Task workspace'],
             ['ideas', 'Ideas & specifications'],
             ['platform', 'Platform'],
             ['connections', 'Connections'],
@@ -333,7 +359,51 @@ function App() {
             </button>
           </div>
         )}
-        {view === 'connections' ? (
+        {view === 'workspaces' ? (
+          <Workspaces
+            projects={state.projects}
+            tasks={state.tasks}
+            drafts={workspaceDrafts}
+            act={act}
+            add={() => setDialog('project')}
+            open={(project, view) => {
+              setProjectId(project.id);
+              setTaskId('');
+              setView(view);
+            }}
+          />
+        ) : view === 'workspace-files' && project ? (
+          <WorkspaceFiles
+            key={project.id}
+            project={project}
+            drafts={workspaceDrafts[project.id] ?? {}}
+            dark={dark}
+            active={state.tasks.some(
+              (task) =>
+                task.projectId === project.id &&
+                (state.activeTasks.includes(task.id) ||
+                  state.apps.some((app) => app.taskId === task.id)),
+            )}
+            updateDraft={(path, draft) =>
+              setWorkspaceDrafts((previous) => ({
+                ...previous,
+                [project.id]: { ...previous[project.id], [path]: draft },
+              }))
+            }
+            settings={() => setView('project')}
+          />
+        ) : project && (view === 'overview' || (view === 'work' && !task)) ? (
+          <WorkspaceOverview
+            project={project}
+            tasks={state.tasks.filter(
+              (task) => task.projectId === project.id && task.status !== 'archived',
+            )}
+            edit={() => setView('project')}
+            browse={() => setView('workspace-files')}
+            createTask={() => setDialog('task')}
+            selectTask={selectTask}
+          />
+        ) : view === 'connections' ? (
           <Connections settings={state.settings} act={act} onNotice={setNotice} />
         ) : view === 'platform' ? (
           <Platform act={act} />
@@ -891,11 +961,14 @@ function App() {
         >
           {dialog === 'project' ? (
             <ProjectDialog
+              error={error}
               act={act}
-              done={(p) => {
+              done={async (p, overview) => {
+                await refresh();
                 setProjectId(p.id);
+                setTaskId('');
                 setDialog('');
-                setView('project');
+                setView(overview ? 'overview' : 'project');
               }}
             />
           ) : dialog === 'task' ? (
@@ -1065,87 +1138,171 @@ type Act = <T = unknown>(
   method: string,
   params?: Record<string, unknown>,
 ) => Promise<T | undefined>;
-function ProjectDialog({ act, done }: { act: Act; done: (project: Project) => void }) {
+function ProjectDialog({
+  act,
+  done,
+  error,
+}: {
+  act: Act;
+  done: (project: Project, overview?: boolean) => void;
+  error: string;
+}) {
   const [mode, setMode] = useState('open'),
     [path, setPath] = useState(''),
     [url, setUrl] = useState(''),
-    [waiting, setWaiting] = useState(false);
+    [waiting, setWaiting] = useState(false),
+    [starterId, setStarterId] = useState<StarterId>(defaultStarterId),
+    [creationSource, setCreationSource] = useState('starter');
+  const starter = getStarter(starterId);
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (waiting || (mode === 'create' && creationSource === 'reference')) return;
         setWaiting(true);
-        void act<Project>(`project.${mode === 'open' ? 'add' : mode}`, { path, url })
+        void act<Project>(`project.${mode === 'open' ? 'add' : mode}`, {
+          path,
+          url,
+          ...(mode === 'create' ? { starterId } : {}),
+        })
           .then((p) => {
             if (p) done(p);
           })
           .finally(() => setWaiting(false));
       }}
     >
-      <div className="segmented">
-        {[
-          ['open', 'Open existing'],
-          ['create', 'Create new'],
-          ['clone', 'Clone GitHub'],
-        ].map(([key, text]) => (
-          <button
-            type="button"
-            key={key}
-            className={mode === key ? 'active' : ''}
-            onClick={() => setMode(key)}
-          >
-            {text}
-          </button>
-        ))}
-      </div>
-      <p className="muted">
-        {mode === 'create'
-          ? 'Start with a TypeScript and React application, with unit and browser tests.'
-          : 'Your repository stays on disk. Task changes live in separate worktrees.'}
-      </p>
-      {mode === 'clone' && (
-        <label>
-          Repository URL
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            type="url"
-            required
-            placeholder="https://github.com/team/project"
-          />
-        </label>
-      )}
-      <label>
-        {mode === 'open' ? 'Repository directory' : 'Empty destination directory'}
-        <div className="input-action">
-          <input
-            aria-label="Repository directory"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            required
-            placeholder="/Users/you/Projects/my-app"
-          />
-          <button
-            type="button"
-            onClick={() =>
-              void api.call<string | null>('dialog.directory').then((p) => {
-                if (p) setPath(p);
-              })
-            }
-          >
-            Browse
-          </button>
+      <fieldset className="project-fields" disabled={waiting}>
+        <div className="segmented">
+          {[
+            ['open', 'Open existing'],
+            ['create', 'Create new'],
+            ['clone', 'Clone GitHub'],
+          ].map(([key, text]) => (
+            <button
+              type="button"
+              key={key}
+              className={mode === key ? 'active' : ''}
+              onClick={() => setMode(key)}
+            >
+              {text}
+            </button>
+          ))}
         </div>
-      </label>
-      <button className="primary" disabled={waiting}>
-        {waiting
-          ? 'Preparing project…'
-          : mode === 'create'
-            ? 'Create application'
-            : mode === 'clone'
-              ? 'Clone repository'
-              : 'Open project'}
-      </button>
+        {mode === 'create' && (
+          <label>
+            Create from
+            <select value={creationSource} onChange={(e) => setCreationSource(e.target.value)}>
+              <option value="starter">Built-in starter</option>
+              <option value="reference">From a reference project</option>
+            </select>
+          </label>
+        )}
+        {mode === 'create' && creationSource === 'reference' ? (
+          <ReferenceProject done={(p) => done(p, true)} />
+        ) : (
+          <>
+            <p className="muted">
+              {mode === 'create'
+                ? 'Choose a language and framework for your new project.'
+                : 'Your repository stays on disk. Task changes live in separate worktrees.'}
+            </p>
+            {mode === 'create' && (
+              <>
+                <div className="starter-fields">
+                  <label>
+                    Language
+                    <select
+                      value={starter.language}
+                      onChange={(event) => {
+                        const compatible = starters.filter(
+                          (entry) => entry.language === event.target.value,
+                        );
+                        setStarterId(
+                          (
+                            compatible.find((entry) => entry.framework === starter.framework) ??
+                            compatible[0]
+                          ).id,
+                        );
+                      }}
+                    >
+                      {[...new Set(starters.map((entry) => entry.language))].map((language) => (
+                        <option key={language}>{language}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Framework
+                    <select
+                      value={starterId}
+                      onChange={(event) => setStarterId(event.target.value as StarterId)}
+                    >
+                      {starters
+                        .filter((entry) => entry.language === starter.language)
+                        .map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.framework}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="muted starter-description" aria-live="polite">
+                  <p>{starter.description}</p>
+                  <p>Requires {starter.requires}. Dependencies are installed during setup.</p>
+                </div>
+              </>
+            )}
+            {mode === 'clone' && (
+              <label>
+                Repository URL
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  type="url"
+                  required
+                  placeholder="https://github.com/team/project"
+                />
+              </label>
+            )}
+            <label>
+              {mode === 'open' ? 'Repository directory' : 'Empty destination directory'}
+              <div className="input-action">
+                <input
+                  aria-label="Repository directory"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  required
+                  placeholder="/Users/you/Projects/my-app"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    void api.call<string | null>('dialog.directory').then((p) => {
+                      if (p) setPath(p);
+                    })
+                  }
+                >
+                  Browse
+                </button>
+              </div>
+            </label>
+            {error && (
+              <p role="alert" className="agent-error">
+                {error}
+              </p>
+            )}
+            <button className="primary" disabled={waiting}>
+              {waiting
+                ? 'Preparing project…'
+                : mode === 'create'
+                  ? 'Create application'
+                  : mode === 'clone'
+                    ? 'Clone repository'
+                    : 'Open project'}
+            </button>
+          </>
+        )}
+      </fieldset>
     </form>
   );
 }
@@ -1258,6 +1415,7 @@ function ProjectSettings({ project, act }: { project: Project; act: Act }) {
           repository.
         </p>
       </div>
+      <WorkspaceName project={project} act={act} />
       <div className="surface">
         <h2>Commands, agents, and spending</h2>
         <p className="muted">
