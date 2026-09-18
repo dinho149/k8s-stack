@@ -1,0 +1,38 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata: {name: preview-baseline}
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: baseline-workloads
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: {stack.platform/managed: 'true'}
+      validate:
+        podSecurity:
+          level: baseline
+          version: latest
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata: {name: preview-no-loadbalancers}
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: shared-gateway-only
+      match:
+        any:
+          - resources:
+              kinds: [Service]
+              namespaceSelector:
+                matchLabels: {stack.platform/managed: 'true'}
+      validate:
+        message: Preview services must use ClusterIP and the shared gateway.
+        pattern:
+          spec:
+            type: ClusterIP

@@ -1,0 +1,9 @@
+{
+ "realm":"platform","enabled":true,"registrationAllowed":false,"sslRequired":"external",
+ "identityProviders":[{"alias":"github","providerId":"github","enabled":true,"trustEmail":false,"config":{"clientId":"${GITHUB_CLIENT_ID}","clientSecret":"${GITHUB_CLIENT_SECRET}","defaultScope":"read:user user:email read:org"}}],
+ "clients":[
+  {"clientId":"backstage","enabled":true,"protocol":"openid-connect","publicClient":false,"secret":"${BACKSTAGE_OIDC_SECRET}","redirectUris":["${BACKSTAGE_URL}/api/auth/oidc/handler/frame"]},
+  {"clientId":"argocd","enabled":true,"protocol":"openid-connect","publicClient":false,"secret":"${ARGOCD_OIDC_SECRET}","redirectUris":["${ARGOCD_URL}/auth/callback"]},
+  {"clientId":"grafana","enabled":true,"protocol":"openid-connect","publicClient":false,"secret":"${GRAFANA_OIDC_SECRET}","redirectUris":["${GRAFANA_URL}/login/generic_oauth"]}
+ ]
+}

@@ -1,0 +1,26 @@
+lifecycle:
+  image: ghcr.io/replace-me/stack-lifecycle:0.1.0
+  storage: 2Gi
+  config: {}
+agent:
+  enabled: true
+  image: ghcr.io/replace-me/stack-agent:0.1.0
+  provider: bedrock
+  storage: 5Gi
+  serviceAccountAnnotations: {}
+  bedrock: {region: '', model: ''}
+  vertex: {region: '', project: '', model: ''}
+  concurrency: 4
+secretName: stack-secrets
+portal:
+  enabled: false
+  frontendImage: ghcr.io/replace-me/stack-portal:0.1.0
+  backendImage: ghcr.io/replace-me/stack-backstage:0.1.0
+  hostname: portal.example.invalid
+  config: {}
+
+monitoring:
+  enabled: false
+  release: monitoring
+  tokenSecret: stack-secrets
+  tokenKey: STACK_METRICS_TOKEN

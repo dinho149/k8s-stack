@@ -1,0 +1,8 @@
+replicas: 2
+postgres:
+  enabled: false
+externalDatabase:
+  host: REPLACE_WITH_DATABASE_HOST
+  database: sample
+  username: sample
+  secretName: sample-database

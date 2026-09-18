@@ -1,0 +1,44 @@
+name: preview-build
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: examples/sample
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/${{ github.repository }}/sample:${{ github.event.pull_request.head.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan before allowing deployment
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/sample@${{ steps.image.outputs.digest }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+      - name: Record immutable deployment input
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          REVISION: ${{ github.event.pull_request.head.sha }}
+          IMAGE: ghcr.io/${{ github.repository }}/sample@${{ steps.image.outputs.digest }}
+        run: python3 -c 'import os,json;json.dump({k:os.environ[k] for k in ["PR_NUMBER","REVISION","IMAGE"]},open("preview.json","w"))'
+      - uses: actions/upload-artifact@v4
+        with: {name: preview-input, path: preview.json, retention-days: 1}

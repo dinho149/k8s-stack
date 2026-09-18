@@ -1,0 +1,102 @@
+{{- $secretName := printf "%s-database" .Release.Name -}}
+{{- if not .Values.postgres.enabled }}{{- $secretName = .Values.externalDatabase.secretName }}{{- end }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $secretName -}}
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+type: Opaque
+data:
+  password: {{ if $existing }}{{ index $existing.data "password" }}{{ else }}{{ randAlphaNum 32 | b64enc }}{{ end }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres}
+spec:
+  selector: {app: stack-postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: stack-postgres}
+  template:
+    metadata:
+      labels: {app: stack-postgres}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 70, fsGroup: 70, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | quote }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          env:
+            - {name: POSTGRES_DB, value: sample}
+            - {name: POSTGRES_USER, value: sample}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ $secretName }}, key: password}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, sample]}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: {{ .Values.postgres.storage }}}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: sample}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app: stack-sample}
+  template:
+    metadata:
+      labels: {app: stack-sample}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: sample
+          image: {{ .Values.image | quote }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          env:
+            - {name: REVISION, value: {{ .Values.revision | quote }}}
+            - {name: PGHOST, value: {{ ternary "postgres" .Values.externalDatabase.host .Values.postgres.enabled | quote }}}
+            - {name: PGDATABASE, value: {{ .Values.externalDatabase.database | quote }}}
+            - {name: PGUSER, value: {{ .Values.externalDatabase.username | quote }}}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ $secretName }}, key: password}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: sample}
+spec:
+  selector: {app: stack-sample}
+  ports: [{port: 80, targetPort: 8080}]

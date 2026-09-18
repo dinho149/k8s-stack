@@ -1,0 +1,224 @@
+{
+  "apiVersion": "stack.platform/catalog-v1",
+  "components": [
+    {
+      "name": "cert-manager",
+      "namespace": "cert-manager",
+      "repo": "https://charts.jetstack.io",
+      "chart": "cert-manager",
+      "version": "v1.18.2",
+      "values": {
+        "crds": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "external-dns",
+      "namespace": "external-dns",
+      "repo": "https://kubernetes-sigs.github.io/external-dns/",
+      "chart": "external-dns",
+      "version": "1.19.0",
+      "cloudOnly": true,
+      "values": {
+        "policy": "upsert-only",
+        "txtOwnerId": "stack",
+        "sources": [
+          "gateway-httproute"
+        ]
+      }
+    },
+    {
+      "name": "external-secrets",
+      "namespace": "external-secrets",
+      "repo": "https://charts.external-secrets.io",
+      "chart": "external-secrets",
+      "version": "0.20.1",
+      "values": {
+        "installCRDs": true
+      }
+    },
+    {
+      "name": "kyverno",
+      "namespace": "kyverno",
+      "repo": "https://kyverno.github.io/kyverno/",
+      "chart": "kyverno",
+      "version": "3.5.2",
+      "values": {}
+    },
+    {
+      "name": "monitoring",
+      "namespace": "monitoring",
+      "repo": "https://prometheus-community.github.io/helm-charts",
+      "chart": "kube-prometheus-stack",
+      "version": "77.5.0",
+      "values": {
+        "grafana": {
+          "enabled": true
+        },
+        "prometheus": {
+          "prometheusSpec": {
+            "retention": "7d",
+            "resources": {
+              "requests": {
+                "memory": "256Mi"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "loki",
+      "namespace": "monitoring",
+      "repo": "https://grafana.github.io/helm-charts",
+      "chart": "loki",
+      "version": "6.40.0",
+      "values": {
+        "deploymentMode": "SingleBinary",
+        "loki": {
+          "auth_enabled": true,
+          "commonConfig": {
+            "replication_factor": 1
+          },
+          "storage": {
+            "type": "filesystem"
+          },
+          "schemaConfig": {
+            "configs": [
+              {
+                "from": "2024-04-01",
+                "store": "tsdb",
+                "object_store": "filesystem",
+                "schema": "v13",
+                "index": {
+                  "prefix": "index_",
+                  "period": "24h"
+                }
+              }
+            ]
+          }
+        },
+        "singleBinary": {
+          "replicas": 1
+        },
+        "read": {
+          "replicas": 0
+        },
+        "write": {
+          "replicas": 0
+        },
+        "backend": {
+          "replicas": 0
+        },
+        "chunksCache": {
+          "enabled": false
+        },
+        "resultsCache": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "tempo",
+      "namespace": "monitoring",
+      "repo": "https://grafana.github.io/helm-charts",
+      "chart": "tempo",
+      "version": "1.23.3",
+      "values": {}
+    },
+    {
+      "name": "otel",
+      "namespace": "monitoring",
+      "repo": "https://open-telemetry.github.io/opentelemetry-helm-charts",
+      "chart": "opentelemetry-collector",
+      "version": "0.132.0",
+      "values": {
+        "mode": "daemonset",
+        "image": {
+          "repository": "otel/opentelemetry-collector-contrib"
+        },
+        "presets": {
+          "logsCollection": {
+            "enabled": true
+          },
+          "kubernetesAttributes": {
+            "enabled": true
+          }
+        },
+        "config": {
+          "exporters": {
+            "otlphttp/loki": {
+              "endpoint": "http://loki-gateway.monitoring.svc/otlp",
+              "headers": {
+                "X-Scope-OrgID": "platform"
+              }
+            },
+            "otlp/tempo": {
+              "endpoint": "tempo.monitoring.svc:4317",
+              "tls": {
+                "insecure": true
+              }
+            }
+          },
+          "service": {
+            "pipelines": {
+              "logs": {
+                "receivers": [
+                  "filelog"
+                ],
+                "processors": [
+                  "k8sattributes",
+                  "batch"
+                ],
+                "exporters": [
+                  "otlphttp/loki"
+                ]
+              },
+              "traces": {
+                "receivers": [
+                  "otlp"
+                ],
+                "processors": [
+                  "batch"
+                ],
+                "exporters": [
+                  "otlp/tempo"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "velero",
+      "namespace": "velero",
+      "repo": "https://vmware-tanzu.github.io/helm-charts",
+      "chart": "velero",
+      "version": "10.1.0",
+      "cloudOnly": true,
+      "values": {
+        "deployNodeAgent": true
+      }
+    },
+    {
+      "name": "opencost",
+      "namespace": "opencost",
+      "repo": "https://opencost.github.io/opencost-helm-chart",
+      "chart": "opencost",
+      "version": "2.5.31",
+      "values": {
+        "opencost": {
+          "prometheus": {
+            "internal": {
+              "serviceName": "monitoring-kube-prometheus-prometheus",
+              "namespaceName": "monitoring",
+              "port": 9090
+            }
+          }
+        }
+      }
+    }
+  ]
+}

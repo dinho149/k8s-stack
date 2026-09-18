@@ -1,0 +1,20 @@
+configs:
+  params:
+    server.insecure: true
+  cm:
+    application.resourceTrackingMethod: annotation
+  rbac:
+    policy.default: role:readonly
+server:
+  replicas: 1
+repoServer:
+  replicas: 1
+applicationSet:
+  replicas: 1
+notifications:
+  enabled: false
+dex:
+  enabled: false
+redis:
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}

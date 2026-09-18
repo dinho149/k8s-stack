@@ -1,0 +1,20 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stack-lifecycle
+  labels:
+    release: {{ .Values.monitoring.release | quote }}
+spec:
+  selector:
+    matchLabels: {app: stack-lifecycle}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .Values.monitoring.tokenSecret }}
+          key: {{ .Values.monitoring.tokenKey }}
+{{- end }}

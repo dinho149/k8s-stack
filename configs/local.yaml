@@ -1,0 +1,33 @@
+apiVersion: stack.platform/v1alpha1
+name: stack-local
+provider: kind
+profile: local
+domain: 127.0.0.1.nip.io
+region: local
+context: kind-stack-local
+statePath: .stack/state.db
+listen: 127.0.0.1:8088
+repository: https://github.com/REPLACE_ME/k8s-stack.git
+components: [argocd, gateway, cert-manager, kyverno, monitoring, logs, traces, secrets, backups, costs]
+lifecycle:
+  ttl: 24h
+  maxTTL: 168h
+  warmTarget: 3m
+  operationTimeout: 15m
+  maxPreviews: 5
+agent:
+  provider: bedrock
+  bedrock:
+    region: eu-west-2
+    model: REPLACE_WITH_ENABLED_BEDROCK_MODEL_ID
+  vertex:
+    project: REPLACE_WITH_GOOGLE_PROJECT
+    region: europe-west1
+    model: REPLACE_WITH_ENABLED_VERTEX_MODEL_ID
+auth:
+  issuer: ''
+  clientId: stack
+  users:
+    - subject: local-developer
+      role: admin
+      teams: [platform]

@@ -1,0 +1,12 @@
+image: ghcr.io/replace-me/stack-sample@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+revision: abcdef1234
+replicas: 1
+postgres:
+  enabled: true
+  image: postgres:16.9-alpine
+  storage: 1Gi
+externalDatabase:
+  host: ""
+  database: sample
+  username: sample
+  secretName: sample-database

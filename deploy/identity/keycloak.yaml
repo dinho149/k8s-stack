@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak, namespace: identity}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: keycloak}
+  template:
+    metadata:
+      labels: {app: keycloak}
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.3.3
+          args: [start, --import-realm]
+          envFrom:
+            - secretRef: {name: keycloak-config}
+          env:
+            - {name: KC_DB, value: postgres}
+            - {name: KC_HTTP_ENABLED, value: 'true'}
+            - {name: KC_PROXY_HEADERS, value: xforwarded}
+            - {name: KC_HEALTH_ENABLED, value: 'true'}
+          ports: [{containerPort: 8080}, {containerPort: 9000}]
+          readinessProbe:
+            httpGet: {path: /health/ready, port: 9000}
+            initialDelaySeconds: 20
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}
+      volumes:
+        - name: realm
+          configMap: {name: platform-realm}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak, namespace: identity}
+spec:
+  selector: {app: keycloak}
+  ports: [{port: 80, targetPort: 8080}]

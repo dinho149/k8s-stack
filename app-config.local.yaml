@@ -1,0 +1,32 @@
+app:
+  title: Stack
+  baseUrl: http://localhost:3000
+organization:
+  name: Local platform
+backend:
+  baseUrl: http://localhost:7007
+  listen: {host: 127.0.0.1, port: 7007}
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: pg
+    connection: ${BACKSTAGE_DATABASE_URL}
+auth:
+  environment: development
+  providers:
+    guest: {}
+platform:
+  apiUrl: http://127.0.0.1:8088
+  agentUrl: http://127.0.0.1:8090
+  serviceToken: ${STACK_SERVICE_TOKEN}
+  identities:
+    - entityRef: user:development/guest
+      subject: local-developer
+catalog:
+  rules:
+    - allow: [Component, System, API, Resource, Location, Template, User, Group]
+  locations:
+    - type: file
+      target: ../../catalog/entities.yaml

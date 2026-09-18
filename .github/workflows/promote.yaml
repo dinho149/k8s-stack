@@ -1,0 +1,38 @@
+name: promote
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        options: [dev, staging, prod]
+        required: true
+      image: {type: string, required: true}
+      revision: {type: string, required: true}
+      requested_by: {type: string, required: true}
+permissions:
+  contents: write
+concurrency:
+  group: promote-${{ inputs.target }}
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    # Configure required reviewers on staging/prod. Credentials remain outside this job.
+    environment: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main}
+      - name: Update GitOps desired state
+        env:
+          TARGET: ${{ inputs.target }}
+          IMAGE: ${{ inputs.image }}
+          REVISION: ${{ inputs.revision }}
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          python3 scripts/promote.py
+          git config user.name 'platform-release[bot]'
+          git config user.email 'platform-release@users.noreply.github.com'
+          git add "environments/$TARGET/release.json"
+          git diff --cached --quiet || git commit -m "Promote $TARGET to $REVISION"
+          git push origin HEAD:main

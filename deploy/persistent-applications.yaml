@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata: {name: persistent-environments, namespace: argocd}
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - {environment: dev}
+          - {environment: staging}
+          - {environment: prod}
+  template:
+    metadata:
+      name: '{{.environment}}-sample'
+    spec:
+      project: persistent
+      sources:
+        - repoURL: REPLACE_WITH_PLATFORM_REPOSITORY
+          targetRevision: main
+          path: deploy/charts/sample
+          helm:
+            valueFiles:
+              - '$values/environments/{{.environment}}/release.json'
+              - '$values/environments/{{.environment}}/values.yaml'
+        - repoURL: REPLACE_WITH_PLATFORM_REPOSITORY
+          targetRevision: main
+          ref: values
+      destination:
+        name: '{{.environment}}'
+        namespace: sample
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true]

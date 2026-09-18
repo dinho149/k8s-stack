@@ -1,0 +1,9 @@
+apiVersion: velero.io/v1
+kind: Schedule
+metadata: {name: platform-daily, namespace: velero}
+spec:
+  schedule: '0 2 * * *'
+  template:
+    includedNamespaces: [platform, argocd, identity]
+    ttl: 336h
+    defaultVolumesToFsBackup: true

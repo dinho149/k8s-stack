@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: stack-config}
+data:
+  platform.yaml: |
+    {{- toYaml .Values.lifecycle.config | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: stack-lifecycle}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: stack-state}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: {{ .Values.lifecycle.storage }}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: stack-lifecycle}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: stack-lifecycle}
+  template:
+    metadata:
+      labels: {app: stack-lifecycle}
+    spec:
+      serviceAccountName: stack-lifecycle
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
+      containers:
+        - name: lifecycle
+          image: {{ .Values.lifecycle.image }}
+          args: [serve, --config, /config/platform.yaml]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }}}
+          ports: [{containerPort: 8088}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8088}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: state, mountPath: /workspace/.stack}
+      volumes:
+        - name: config
+          configMap: {name: stack-config}
+        - name: state
+          persistentVolumeClaim: {claimName: stack-state}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stack-lifecycle
+  labels: {app: stack-lifecycle}
+spec:
+  selector: {app: stack-lifecycle}
+  ports: [{name: http, port: 8088, targetPort: 8088}]
+{{- if .Values.agent.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stack-agent
+  annotations:
+    {{- toYaml .Values.agent.serviceAccountAnnotations | nindent 4 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: stack-agent-sessions}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: {{ .Values.agent.storage }}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: stack-agent}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: stack-agent}
+  template:
+    metadata:
+      labels: {app: stack-agent}
+    spec:
+      serviceAccountName: stack-agent
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: agent
+          image: {{ .Values.agent.image }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }}}
+          env:
+            - {name: STACK_API_URL, value: 'http://stack-lifecycle:8088'}
+            - {name: AGENT_STATE_DIR, value: /state}
+            - {name: AGENT_PROVIDER, value: {{ .Values.agent.provider | quote }}}
+            - {name: AGENT_CONCURRENCY, value: {{ .Values.agent.concurrency | quote }}}
+            - {name: AWS_REGION, value: {{ .Values.agent.bedrock.region | quote }}}
+            - {name: BEDROCK_MODEL, value: {{ .Values.agent.bedrock.model | quote }}}
+            - {name: VERTEX_MODEL, value: {{ .Values.agent.vertex.model | quote }}}
+            - {name: CLOUD_ML_REGION, value: {{ .Values.agent.vertex.region | quote }}}
+            - {name: ANTHROPIC_VERTEX_PROJECT_ID, value: {{ .Values.agent.vertex.project | quote }}}
+          ports: [{containerPort: 8090}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8090}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: '2', memory: 2Gi}
+          volumeMounts:
+            - {name: sessions, mountPath: /state}
+      volumes:
+        - name: sessions
+          persistentVolumeClaim: {claimName: stack-agent-sessions}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: stack-agent}
+spec:
+  selector: {app: stack-agent}
+  ports: [{port: 8090, targetPort: 8090}]
+{{- end }}

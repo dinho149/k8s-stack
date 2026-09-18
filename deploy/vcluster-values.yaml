@@ -1,0 +1,23 @@
+controlPlane:
+  statefulSet:
+    image:
+      registry: ghcr.io
+      repository: loft-sh/vcluster-oss
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 1Gi}
+  backingStore:
+    etcd:
+      embedded:
+        enabled: false
+    database:
+      embedded:
+        enabled: true
+sync:
+  toHost:
+    ingresses:
+      enabled: false
+    services:
+      enabled: true
+    persistentVolumeClaims:
+      enabled: true

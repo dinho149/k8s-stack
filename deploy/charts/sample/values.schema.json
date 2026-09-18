@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft-07/schema#","type":"object","required":["image","revision"],"properties":{"image":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9./_:-]+@sha256:[a-f0-9]{64}$"},"revision":{"type":"string","pattern":"^[a-f0-9]{7,64}$"},"replicas":{"type":"integer","minimum":1}}}

@@ -1,0 +1,87 @@
+{{- if .Values.portal.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: stack-backstage-config}
+data:
+  app-config.yaml: |
+    {{- toYaml .Values.portal.config | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: stack-backstage}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: stack-backstage}
+  template:
+    metadata:
+      labels: {app: stack-backstage}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: backend
+          image: {{ .Values.portal.backendImage }}
+          envFrom:
+            - secretRef: {name: {{ .Values.secretName }}}
+          env:
+            - {name: NODE_ENV, value: production}
+          ports: [{containerPort: 7007}]
+          readinessProbe:
+            httpGet: {path: /.backstage/health/v1/readiness, port: 7007}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: stack-backstage-config}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: stack-backstage}
+spec:
+  selector: {app: stack-backstage}
+  ports: [{port: 7007, targetPort: 7007}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: stack-portal}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: stack-portal}
+  template:
+    metadata:
+      labels: {app: stack-portal}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: frontend
+          image: {{ .Values.portal.frontendImage }}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /, port: 8080}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: stack-portal}
+spec:
+  selector: {app: stack-portal}
+  ports: [{port: 80, targetPort: 8080}]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: portal}
+spec:
+  parentRefs: [{name: platform, namespace: envoy-gateway-system}]
+  hostnames: [{{ .Values.portal.hostname | quote }}]
+  rules:
+    - backendRefs: [{name: stack-portal, port: 80}]
+{{- end }}

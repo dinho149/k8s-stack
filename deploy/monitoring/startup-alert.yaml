@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stack-startup
+  namespace: monitoring
+  labels: {release: monitoring}
+spec:
+  groups:
+    - name: stack.startup
+      rules:
+        - alert: PreviewStartupTargetExceeded
+          expr: histogram_quantile(0.95, sum by (le) (rate(stack_launch_duration_seconds_bucket{warm="true",phase="application-ready"}[1h]))) > 180
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Warm preview startup p95 exceeds three minutes
+        - alert: PlatformOperationsFailing
+          expr: increase(stack_operations_total{status="failed"}[15m]) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: A platform operation failed; inspect the portal operation log

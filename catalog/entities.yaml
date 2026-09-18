@@ -1,0 +1,56 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: stack
+  description: Portable Kubernetes developer platform
+spec:
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata: {name: platform}
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: sample
+  description: Revision-aware sample application with PostgreSQL
+  annotations:
+    backstage.io/kubernetes-label-selector: app=stack-sample
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: stack
+---
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: preview-environment
+  title: Preview environment
+  description: Create a preview using the environment management page and an immutable image digest.
+spec:
+  owner: group:default/platform
+  type: service
+  parameters:
+    - title: Environment
+      required: [name, image, revision]
+      properties:
+        name: {title: Name, type: string, pattern: '^[a-z][a-z0-9-]{0,39}$'}
+        image: {title: Immutable image digest, type: string}
+        revision: {title: Git commit SHA, type: string}
+  steps:
+    - id: create
+      name: Create preview
+      action: platform:createPreview
+      input:
+        name: ${{ parameters.name }}
+        image: ${{ parameters.image }}
+        revision: ${{ parameters.revision }}
+  output:
+    text:
+      - title: Operation
+        content: 'Preview operation: ${{ steps.create.output.operationId }}. Open the environment page for progress.'
