@@ -16,7 +16,10 @@ concurrency:
 env:
   TELEPORT_VERSION: "18.11.1"
   # Throwaway passphrase for the kind stack and for CI previews of the cloud stacks (file backend).
-  PULUMI_CONFIG_PASSPHRASE: ci-passphrase
+  # The committed Pulumi.<stack>.yaml files carry an `encryptionsalt` minted with the local dev passphrase;
+  # they hold no secret values (cloud stacks must use a KMS provider, enforced by `make secrets-guard`), so CI
+  # opens them with that same throwaway passphrase to render previews and the kind e2e stack.
+  PULUMI_CONFIG_PASSPHRASE: local-dev
   NO_COLOR: "1"
   GOTOOLCHAIN: auto
 
