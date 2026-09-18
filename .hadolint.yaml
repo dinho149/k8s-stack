@@ -1,0 +1,13 @@
+# hadolint configuration for the three Dockerfiles (services/*/Dockerfile, deploy/images/ssh-node/Dockerfile).
+failure-threshold: warning
+trustedRegistries:
+  - cgr.dev
+  - public.ecr.aws
+  - docker.io
+  - gcr.io
+  - ghcr.io
+ignored:
+  # DL3018 "pin versions in apk add": the ssh-node dummy pulls bash/shadow from wolfi-base, whose package
+  # versions roll daily with the digest-pinned base; pinning them would break every base bump. The base
+  # image digest is the pin. Dependabot refreshes it weekly and Trivy scans the result.
+  - DL3018

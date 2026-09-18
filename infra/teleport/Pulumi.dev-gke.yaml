@@ -8,15 +8,29 @@
 config:
   teleport:env: dev
   teleport:platform: gke
+  # CI previews render against the kind context with TELEPORT_ALLOW_KIND_CONTEXT=1; a real deploy must set a cloud context.
   teleport:kubeContext: kind-teleport-local
   teleport:clusterName: teleport.dev.example.com
   teleport:publicAddr: teleport.dev.example.com:443
   teleport:version: "18.11.1"
   teleport:edition: community
+  # No local logins off kind: SSO only, WebAuthn only. `make github-sso STACK=dev-gke` fills in the
+  # real organization / client id and stores the client secret (teleport:githubClientSecret).
   teleport:auth:
-    type: local # switch to github with: make github-sso STACK=dev-gke
-    secondFactors: [webauthn, otp]
-    localAuth: true
+    type: github
+    secondFactors: [webauthn]
+    localAuth: false
+  teleport:github:
+    organization: CHANGE-ME
+    clientId: CHANGE-ME
+    teamsToRoles:
+      - team: teleport-users
+        roles: [requester]
+      - team: teleport-approvers
+        roles: [requester, approver]
+      # No standing editor/access anywhere: admins request `break-glass-editor` like everyone else.
+      - team: teleport-admins
+        roles: [requester, approver, auditor]
   teleport:tls:
     mode: cert-manager
     issuerName: letsencrypt
@@ -25,9 +39,11 @@ config:
     registry: ghcr.io/CHANGE-ME/k8s-teleport
     tag: latest
     pullPolicy: Always
-  teleport:users:
-    - name: admin
-      roles: [editor, access, auditor, approver]
-      traits:
-        logins: [root, dev]
+  teleport:services:
+    agent:
+      # the chat agent fails closed: only these email domains / Slack workspaces may talk to it
+      allowedEmailDomains: [CHANGE-ME.example.com]
+      slackAllowedTeamIds: [TCHANGEME]
+  # No local users on cloud stacks: the profile invariants refuse standing editor/access off local,
+  # and localAuth is off anyway. Administration happens through an approved break-glass-editor request.
 encryptionsalt: v1:2Hikn0za5eA=:v1:wC+wFZqBtm+xpGb9:dlUXGI4oT4smD9LW92z7Of9uZcP+KQ==

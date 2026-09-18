@@ -71,9 +71,11 @@ export class CliAdapter implements ChatAdapter {
       await this.stop();
       return;
     }
-    const m = /^\/(approve|deny|details)\s+(\S+)(?:\s+(.*))?$/.exec(line);
-    if (m && this.onBtn) {
-      const [, button, id, reason] = m;
+    const [cmd, id, ...rest] = line.split(/\s+/);
+    const isButton = (cmd === "/approve" || cmd === "/deny" || cmd === "/details") && !!id;
+    if (isButton && this.onBtn) {
+      const button = cmd.slice(1);
+      const reason = rest.length ? rest.join(" ") : undefined;
       const full = [...this.cards.keys()].find((k) => k.startsWith(id)) ?? id;
       const card = this.cards.get(full);
       await this.onBtn({

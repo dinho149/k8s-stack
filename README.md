@@ -8,7 +8,7 @@ A portable [Teleport](https://goteleport.com) scaffold that runs the same way on
 - **Zero standing privileges.** Everyone gets a `requester` role; privileged roles are requested just in time.
   Low-risk requests (local/dev) are approved automatically, production requests need an approver — from chat.
 - **An access agent** (Claude + MCP) that answers "what role do I need?", "what can I access right now?",
-  "request `dba` for two hours", exposed on Slack, Microsoft Teams and Google Chat.
+  "request `prod-dba` for two hours", exposed on Slack, Microsoft Teams and Google Chat.
 - **Dummy resources** to protect: SSH servers, PostgreSQL, the Kubernetes cluster, an HTTP app, a fake cloud console.
 - **Test suites**: Pulumi unit tests, Go integration tests against the live cluster, `tsh` end-to-end scenarios.
 - **GitHub SSO** as the default login (Community Edition supports it), local auth kept for break-glass and tests.

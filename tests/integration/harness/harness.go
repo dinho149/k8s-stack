@@ -42,7 +42,7 @@ func Connect(t *testing.T, e Env) *client.Client {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	t.Cleanup(func() { clt.Close() })
+	t.Cleanup(func() { _ = clt.Close() })
 	return clt
 }
 

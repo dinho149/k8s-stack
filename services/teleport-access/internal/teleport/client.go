@@ -84,7 +84,7 @@ func (c *Client) watchIdentity(ctx context.Context, path string, log *slog.Logge
 		c.reloadLoop(ctx, log)
 		return
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	_ = w.Add(filepath.Dir(path))
 	debounce := time.NewTimer(time.Hour)
 	debounce.Stop()

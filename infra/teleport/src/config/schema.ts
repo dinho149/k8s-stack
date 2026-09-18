@@ -5,6 +5,11 @@
  * secret outputs (see profile.ts) so that a single object never mixes both.
  */
 import { z } from "zod";
+import { assignableRoleNames } from "../policy/render";
+
+/** Role names a human may hold directly: every managed non-bot role plus the Teleport presets we allow. */
+const ASSIGNABLE_ROLES = new Set(assignableRoleNames());
+const RoleNameSchema = z.string().min(1).refine((r) => ASSIGNABLE_ROLES.has(r), { error: (iss) => `unknown role ${JSON.stringify(iss.input)} (allowed: ${[...ASSIGNABLE_ROLES].join(", ")})` });
 
 export const PLATFORMS = ["kind", "eks", "gke", "aks", "generic"] as const;
 export const EDITIONS = ["community", "enterprise"] as const;
@@ -15,6 +20,12 @@ export const ExposureSchema = z.discriminatedUnion("type", [
     type: z.literal("loadbalancer"),
     annotations: z.record(z.string(), z.string()).default({}),
     loadBalancerIP: z.string().optional(),
+    /** CIDRs allowed to reach the proxy (rendered as spec.loadBalancerSourceRanges). Required off kind. */
+    sourceRanges: z.array(z.string().regex(/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/, "must be an IPv4 CIDR")).default([]),
+    /** true => cloud-internal load balancer scheme (default). false => internet-facing (needs sourceRanges). */
+    internal: z.boolean().default(true),
+    /** whether the load balancer sends the PROXY protocol header; rendered as the chart's proxyProtocol value */
+    proxyProtocol: z.boolean().default(false),
   }),
   z.object({
     type: z.literal("ingress"),
@@ -47,7 +58,8 @@ export const ChartModeSchema = z.discriminatedUnion("mode", [
     backendTable: z.string(),
     auditLogTable: z.string(),
     sessionRecordingBucket: z.string(),
-    auditLogMirrorOnStdout: z.boolean().default(false),
+    /** also write audit events to the auth pods' stdout so the cluster log pipeline (SIEM) gets a copy */
+    auditLogMirrorOnStdout: z.boolean().default(true),
     serviceAccountRoleArn: z.string().optional(),
   }),
   z.object({
@@ -72,7 +84,9 @@ export const ChartModeSchema = z.discriminatedUnion("mode", [
 export const AuthSchema = z.object({
   type: z.enum(["local", "github", "oidc", "saml"]).default("github"),
   connectorName: z.string().optional(),
+  /** kind keeps otp for headless test users; off kind the profile invariants require webauthn only */
   secondFactors: z.array(z.enum(["otp", "webauthn", "sso"])).min(1).default(["otp"]),
+  /** local password logins; must be false off kind (profile invariants) */
   localAuth: z.boolean().default(true),
   webauthnRpId: z.string().optional(),
 });
@@ -81,13 +95,19 @@ export const GithubSchema = z.object({
   clientId: z.string().min(1),
   organization: z.string().min(1),
   display: z.string().default("GitHub"),
-  teamsToRoles: z.array(z.object({ team: z.string().min(1), roles: z.array(z.string()).min(1) })).min(1),
+  teamsToRoles: z.array(z.object({ team: z.string().min(1), roles: z.array(RoleNameSchema).min(1) })).min(1),
 });
 
 export const ImagesSchema = z.object({
   registry: z.string().default(""), // "" => local images named k8s-teleport/<svc>
   tag: z.string().default("dev"),
   pullPolicy: z.enum(["IfNotPresent", "Always", "Never"]).default("IfNotPresent"),
+  /** service name -> sha256 digest ("sha256:..."). When set, images are referenced by digest, never by tag. Required off kind. */
+  digests: z.record(z.string(), z.string().regex(/^sha256:[a-f0-9]{64}$/, "must be sha256:<64 hex>")).default({}),
+  /** Cloud stacks: install a Kyverno ClusterPolicy that admits only cosign-signed images from `registry` and rejects `:latest`/tagless images. Requires Kyverno. */
+  verifySignatures: z.boolean().default(false),
+  /** Regexp for the cosign keyless certificate subject (GitHub OIDC). Derived from a ghcr.io registry when unset: `https://github.com/<org>/<repo>/.github/workflows/release-images.yml@refs/.*`. */
+  signerSubjectRegexp: z.string().min(1).optional(),
 });
 
 export const DummiesSchema = z.object({
@@ -110,13 +130,19 @@ export const ServicesSchema = z.object({
       auth: z.enum(["api-key", "subscription"]).default("api-key"),
       /** keep Claude Code sessions across restarts (PVC) instead of an emptyDir */
       persistSessions: z.boolean().default(false),
+      /** email domains allowed to talk to the agent (ALLOWED_EMAIL_DOMAINS). Required when the agent is enabled off kind. */
+      allowedEmailDomains: z.array(z.string().min(3)).default([]),
+      /** Slack workspace ids allowed to talk to the agent (SLACK_ALLOWED_TEAM_IDS). Required when the slack adapter is on. */
+      slackAllowedTeamIds: z.array(z.string().min(1)).default([]),
     })
-    .default({ enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false }),
+    .default({ enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false, allowedEmailDomains: [], slackAllowedTeamIds: [] }),
+  /** CI/test harness bot (impersonates alice/bob). Only ever enabled on kind. */
+  harness: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
 });
 
 export const UserSchema = z.object({
   name: z.string().min(1),
-  roles: z.array(z.string()).min(1),
+  roles: z.array(RoleNameSchema).min(1),
   traits: z.record(z.string(), z.array(z.string())).default({}),
 });
 
@@ -159,5 +185,5 @@ export type LocalUser = z.infer<typeof UserSchema>;
 export const SECRET_KEYS = {
   githubClientSecret: "githubClientSecret",
   licensePem: "licensePem",
-  chat: "chat", // object: slackBotToken, slackAppToken, slackSigningSecret, teamsAppId, teamsAppPassword, teamsTenantId, gchatServiceAccountJson, gchatProjectNumber, anthropicApiKey, claudeCodeOauthToken
+  chat: "chat", // object: slackBotToken, slackAppToken, teamsAppId, teamsAppPassword, teamsTenantId, gchatServiceAccountJson, gchatProjectNumber, anthropicApiKey, claudeCodeOauthToken
 } as const;

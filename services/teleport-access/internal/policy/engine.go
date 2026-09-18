@@ -27,6 +27,12 @@ type Decision struct {
 	Notify    Notify
 }
 
+// Rule names the engine synthesises (they never come from the policy document).
+const (
+	RuleNotInCatalog = "not-in-catalog"
+	RuleMixedTier    = "mixed-tier-request"
+)
+
 // Engine evaluates requests against a policy; safe for concurrent use and hot-swappable.
 type Engine struct {
 	mu     sync.RWMutex
@@ -54,29 +60,98 @@ func (e *Engine) Policy() *Policy {
 	return e.policy
 }
 
-// Evaluate returns the decision for req. Deny rules are checked first (regardless of order),
-// then the remaining rules in order; the first match wins; defaults otherwise.
+// Evaluate returns the decision for req.
+//
+// Order: every requested role must be in allowed_roles (when set), otherwise deny. Deny rules are
+// checked first regardless of order and match when ANY requested role matches. Then the remaining
+// rules in order; a non-deny rule's roles clause matches only when EVERY requested role matches, so
+// a request mixing a low-risk and a high-risk role can never ride an auto-approve rule. The first
+// match wins; defaults otherwise. Finally an auto_approve verdict is confirmed per role: each role
+// on its own must also be auto-approvable (deny > require_approval > auto_approve), and a request
+// with no roles is only auto-approvable through a resource_labels rule.
 func (e *Engine) Evaluate(req EvalRequest) Decision {
 	e.mu.RLock()
 	p := e.policy
 	e.mu.RUnlock()
 
-	for _, r := range p.Rules {
-		if r.Action == ActionDeny && e.matches(r, req) {
-			return e.decision(p, &r, req)
+	if len(p.AllowedRoles) > 0 {
+		for _, role := range req.Roles {
+			if !e.anyRoleMatches(p.AllowedRoles, []string{role}) {
+				d := e.decision(p, nil, req)
+				d.Action, d.Rule = ActionDeny, RuleNotInCatalog
+				d.Reason = fmt.Sprintf("role %q is not requestable through the access broker", role)
+				return d
+			}
 		}
 	}
-	for _, r := range p.Rules {
-		if r.Action != ActionDeny && e.matches(r, req) {
-			return e.decision(p, &r, req)
+
+	d, matched := e.evaluateOnce(p, req)
+	if d.Action != ActionAutoApprove {
+		return d
+	}
+	if len(req.Roles) == 0 {
+		if matched == nil || len(matched.Match.ResourceLabels) == 0 {
+			d.Action, d.Rule = ActionRequireApproval, RuleMixedTier
+			d.Reason = "requests without roles are not auto-approvable unless a resource rule matches"
+		}
+		return d
+	}
+	if len(req.Roles) == 1 {
+		return d
+	}
+	// Belt and braces: every role alone must be auto-approvable.
+	var worst *Decision
+	for _, role := range req.Roles {
+		single := req
+		single.Roles = []string{role}
+		sd, _ := e.evaluateOnce(p, single)
+		switch sd.Action {
+		case ActionDeny:
+			sd.Reason = fmt.Sprintf("role %q is denied: %s", role, sd.Reason)
+			return sd
+		case ActionRequireApproval:
+			if worst == nil {
+				cp := sd
+				cp.Rule = RuleMixedTier
+				cp.Reason = fmt.Sprintf("mixed-tier request: role %q alone requires approval (%s); every role in a request must be auto-approvable", role, sd.Reason)
+				worst = &cp
+			}
 		}
 	}
-	return e.decision(p, nil, req)
+	if worst != nil {
+		if d.TTLCap > 0 && d.TTLCap < worst.TTLCap {
+			worst.TTLCap = d.TTLCap
+		}
+		return *worst
+	}
+	return d
+}
+
+// evaluateOnce applies the rule list once (no per-role confirmation) and reports the matched rule.
+func (e *Engine) evaluateOnce(p *Policy, req EvalRequest) (Decision, *Rule) {
+	for i := range p.Rules {
+		r := &p.Rules[i]
+		if r.Action == ActionDeny && e.matches(*r, req) {
+			return e.decision(p, r, req), r
+		}
+	}
+	for i := range p.Rules {
+		r := &p.Rules[i]
+		if r.Action != ActionDeny && e.matches(*r, req) {
+			return e.decision(p, r, req), r
+		}
+	}
+	return e.decision(p, nil, req), nil
 }
 
 func (e *Engine) decision(p *Policy, r *Rule, req EvalRequest) Decision {
 	d := Decision{Action: p.Defaults.Action, Reason: "no policy rule matched; defaults applied", TTLCap: p.Defaults.MaxTTL.D(), Approvers: p.Defaults.Approvers, Notify: p.Defaults.Notify}
 	if r == nil {
+		if d.Action == ActionAutoApprove {
+			// Validate rejects this, but an engine can be built from an unvalidated policy.
+			d.Action = ActionRequireApproval
+			d.Reason = "defaults cannot auto-approve; approval required"
+		}
 		if req.RequestedTTL > 0 && req.RequestedTTL < d.TTLCap {
 			d.TTLCap = req.RequestedTTL
 		}
@@ -103,10 +178,16 @@ func (e *Engine) decision(p *Policy, r *Rule, req EvalRequest) Decision {
 }
 
 // matches reports whether every (all) or any (any) non-empty clause of r.Match holds for req.
+// The roles clause is satisfied by any matching role for deny rules and only when all requested
+// roles match for every other action.
 func (e *Engine) matches(r Rule, req EvalRequest) bool {
 	var results []bool
 	if len(r.Match.Roles) > 0 {
-		results = append(results, e.anyRoleMatches(r.Match.Roles, req.Roles))
+		if r.Action == ActionDeny {
+			results = append(results, e.anyRoleMatches(r.Match.Roles, req.Roles))
+		} else {
+			results = append(results, e.allRolesMatch(r.Match.Roles, req.Roles))
+		}
 	}
 	if len(r.Match.ResourceLabels) > 0 {
 		results = append(results, resourcesMatch(r.Match.ResourceLabels, req.ResourceLabels))
@@ -148,6 +229,19 @@ func (e *Engine) anyRoleMatches(patterns, roles []string) bool {
 	return false
 }
 
+// allRolesMatch: every requested role matches some pattern; an empty role list never matches.
+func (e *Engine) allRolesMatch(patterns, roles []string) bool {
+	if len(roles) == 0 {
+		return false
+	}
+	for _, role := range roles {
+		if !e.anyRoleMatches(patterns, []string{role}) {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Engine) roleMatch(pattern, role string) bool {
 	e.mu.RLock()
 	re, ok := e.cache[pattern]
@@ -166,8 +260,12 @@ func (e *Engine) roleMatch(pattern, role string) bool {
 }
 
 // compileMatcher turns "dev-*" into ^dev-.*$ and passes anchored regexes ("^...$") through.
+// A "^" pattern that is not "$"-anchored is rejected (it would match any role with that prefix).
 func compileMatcher(pattern string) (*regexp.Regexp, error) {
 	if strings.HasPrefix(pattern, "^") {
+		if !strings.HasSuffix(pattern, "$") {
+			return nil, fmt.Errorf("regex role matcher %q must be anchored with $", pattern)
+		}
 		return regexp.Compile(pattern)
 	}
 	var sb strings.Builder

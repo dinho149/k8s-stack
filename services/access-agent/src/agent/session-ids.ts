@@ -1,9 +1,9 @@
 /**
  * Thread key -> Claude Code session id (subscription backend keeps conversation state inside
- * Claude Code's own session files under CLAUDE_STATE_DIR).
+ * Claude Code's own session files under CLAUDE_STATE_DIR). Owner-only on disk.
  */
 import * as fs from "node:fs";
-import * as path from "node:path";
+import { ensurePrivateFile, writePrivateFile } from "./session-store.js";
 
 export interface SessionIdStore {
   get(key: string): string | undefined;
@@ -31,6 +31,7 @@ export class FileSessionIdStore extends MemorySessionIdStore {
   constructor(private readonly file: string) {
     super();
     try {
+      ensurePrivateFile(file);
       if (fs.existsSync(file)) this.data = new Map(Object.entries(JSON.parse(fs.readFileSync(file, "utf8"))));
     } catch {
       this.data = new Map();
@@ -38,8 +39,7 @@ export class FileSessionIdStore extends MemorySessionIdStore {
   }
   protected override persist(): void {
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(this.file, JSON.stringify(Object.fromEntries(this.data)), { mode: 0o600 });
+      writePrivateFile(this.file, JSON.stringify(Object.fromEntries(this.data)));
     } catch {
       /* best effort */
     }

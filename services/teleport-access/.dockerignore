@@ -1,2 +1,12 @@
+.git
 bin
 *.log
+*.pem
+*.key
+identity*
+.env*
+.logs
+coverage
+dist
+tests/.state
+**/*_test.go

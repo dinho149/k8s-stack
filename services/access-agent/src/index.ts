@@ -22,15 +22,20 @@ async function main(): Promise<void> {
     else throw new Error(`unknown adapter ${name}`);
   }
   const app = buildApp(cfg, log, adapters);
-  const server = buildServer({ log, adapters, webhook: app.webhook, onBrokerEvent: (ev) => app.notifications.handleEvent(ev), ready: app.ready });
-  await server.listen({ port: cfg.PORT, host: "0.0.0.0" });
+  const deps = { log, adapters, webhook: app.webhook, onBrokerEvent: (ev: Parameters<typeof app.notifications.handleEvent>[0]) => app.notifications.handleEvent(ev), ready: app.ready };
+  // With PUBLIC_PORT the chat webhooks get their own listener; the broker webhook and readiness stay internal.
+  const internal = buildServer(deps, cfg.PUBLIC_PORT === undefined ? "all" : "internal");
+  const pub = cfg.PUBLIC_PORT === undefined ? null : buildServer(deps, "public");
+  const servers = [internal, ...(pub ? [pub] : [])];
+  await internal.listen({ port: cfg.PORT, host: "0.0.0.0" });
+  if (pub) await pub.listen({ port: cfg.PUBLIC_PORT, host: "0.0.0.0" });
   for (const a of adapters) await a.start();
-  log.info({ port: cfg.PORT, adapters: adapters.map((a) => a.name), model: cfg.CLAUDE_MODEL, backend: app.backend.name }, "access-agent started");
+  log.info({ port: cfg.PORT, publicPort: cfg.PUBLIC_PORT ?? null, adapters: adapters.map((a) => a.name), model: cfg.CLAUDE_MODEL, backend: app.backend.name }, "access-agent started");
   void app.backend.probe().then((p) => log[p.ok ? "info" : "error"]({ backend: app.backend.name, ...p }, "claude credential probe"));
   const shutdown = async () => {
     log.info("shutting down");
     await app.stop();
-    await server.close();
+    await Promise.all(servers.map((s) => s.close()));
     process.exit(0);
   };
   process.on("SIGTERM", shutdown);

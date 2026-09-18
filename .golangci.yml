@@ -1,0 +1,51 @@
+# golangci-lint v2 configuration shared by the three Go modules
+# (services/teleport-access, tests/tools, tests/integration). Run per module:
+#   cd services/teleport-access && golangci-lint run --config=../../.golangci.yml ./...
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - noctx
+    - staticcheck
+    - unused
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment   # layout micro-optimisation, not a defect
+        - shadow           # too noisy for err shadowing in this codebase
+    gosec:
+      severity: medium
+      confidence: medium
+    gocritic:
+      enabled-tags: [diagnostic, performance]
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+  exclusions:
+    generated: lax
+    rules:
+      # Test code may ignore Close/Write errors and use weak randomness for fixtures.
+      - path: _test\.go
+        linters: [errcheck, gosec, noctx, bodyclose]
+      # httptest / ResponseWriter writes in handlers: errors are not actionable after headers are sent.
+      - linters: [errcheck]
+        text: "Error return value of `(w|rw)\\.Write` is not checked"
+
+formatters:
+  enable:
+    - gofmt

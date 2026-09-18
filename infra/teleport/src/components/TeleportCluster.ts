@@ -7,14 +7,37 @@ import * as k8s from "@pulumi/kubernetes";
 import * as pulumi from "@pulumi/pulumi";
 import type { EnvProfile } from "../config/profile";
 import { installChart } from "../lib/helm";
-import { k8sLabels } from "../lib/labels";
+import { k8sLabels, namespaceLabels } from "../lib/labels";
+import { hardenedContainerSecurityContext, hardenedPodSecurityContext, NONROOT_UID } from "../lib/security";
 
 export interface TeleportClusterArgs {
   profile: EnvProfile;
 }
 
+/** Ports the proxy and auth pods listen on (multiplex mode). Used by NetworkPolicies. */
+export const PROXY_PORT = 3080;
+export const AUTH_PORT = 3025;
+/** Fixed nodePort of the in-cluster `public` port on kind, so no random node port is ever opened. */
+export const PUBLIC_NODE_PORT = 30081;
+
+/** Cloud-provider annotation that makes a LoadBalancer internal (not internet-facing). */
+export function internalLoadBalancerAnnotations(platform: EnvProfile["platform"]): Record<string, string> {
+  switch (platform) {
+    case "eks":
+      return { "service.beta.kubernetes.io/aws-load-balancer-scheme": "internal" };
+    case "gke":
+      return { "networking.gke.io/load-balancer-type": "Internal" };
+    case "aks":
+      return { "service.beta.kubernetes.io/azure-load-balancer-internal": "true" };
+    default:
+      return {};
+  }
+}
+
 /** Pure function: chart values for a profile. Unit-tested in test/cluster-values.test.ts. */
 export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
+  const replicaCount = p.platform === "kind" ? 1 : 2;
+  const rpId = p.auth.webauthnRpId ?? p.teleport.publicHost;
   const values: Record<string, unknown> = {
     clusterName: p.clusterName,
     publicAddr: [p.publicAddr],
@@ -25,16 +48,45 @@ export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
     // Config-validation Jobs are Helm hooks; Pulumi's Chart resource does not run hooks.
     validateConfigOnDeploy: false,
     podSecurityPolicy: { enabled: false },
-    operator: { enabled: true, installCRDs: "always" },
+    operator: { enabled: true, installCRDs: "always", resources: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "500m", memory: "256Mi" } } },
     authentication: {
       type: p.auth.type,
       connectorName: p.auth.type === "github" ? (p.auth.connectorName ?? "github") : (p.auth.connectorName ?? ""),
       localAuth: p.auth.localAuth,
       secondFactors: p.auth.secondFactors,
-      ...(p.auth.webauthnRpId ? { webauthn: { rpId: p.auth.webauthnRpId } } : {}),
+      // Integrity over availability: when the auth service cannot verify locks, sessions are refused.
+      lockingMode: "strict",
+    },
+    // Recorded on the node and streamed synchronously to the auth service: a compromised node cannot
+    // withhold or tamper with its own recording after the fact.
+    sessionRecording: "node-sync",
+    // Only accept PROXY protocol headers when a load balancer is configured to send them; any other
+    // setting lets an in-cluster client spoof the source IP in the audit log.
+    proxyProtocol: p.exposure.type === "loadbalancer" && p.exposure.proxyProtocol ? "on" : "off",
+    auth: {
+      // Merged into the auth pods' teleport.yaml (mustMergeOverwrite): these have no dedicated chart value.
+      teleportConfig: {
+        auth_service: {
+          authentication: {
+            // Explicit RP ID: the chart otherwise uses clusterName, which breaks WebAuthn when users reach
+            // the cluster under publicAddr. Changing it invalidates registered WebAuthn devices.
+            webauthn: { rp_id: rpId },
+            // Every SSH/Kubernetes/database/app session needs a fresh MFA check, cluster-wide.
+            // per-session MFA requires a WebAuthn/SSO factor: OTP-only stacks (kind) would lock every session out
+            require_session_mfa: p.auth.secondFactors.includes("webauthn"),
+          },
+          disconnect_expired_cert: true,
+          client_idle_timeout: "15m",
+        },
+      },
     },
     log: { level: "INFO", format: "json" },
-    highAvailability: { replicaCount: 1 },
+    highAvailability: { replicaCount },
+    // Non-root, read-only root filesystem: the only writable path Teleport needs is /var/lib/teleport,
+    // which the chart mounts as a PVC (auth, standalone) or emptyDir (proxy, cloud backends).
+    podSecurityContext: hardenedPodSecurityContext(NONROOT_UID),
+    securityContext: hardenedContainerSecurityContext(),
+    resources: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "2", memory: "2Gi" } },
     extraLabels: { deployment: { stack: p.stack }, pod: { stack: p.stack } },
   };
 
@@ -44,13 +96,17 @@ export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
       // The chart's own Service stays ClusterIP; TeleportCluster adds a NodePort Service.
       values.service = { type: "ClusterIP" };
       break;
-    case "loadbalancer":
+    case "loadbalancer": {
+      const spec: Record<string, unknown> = {};
+      if (p.exposure.loadBalancerIP) spec.loadBalancerIP = p.exposure.loadBalancerIP;
+      if (p.exposure.sourceRanges.length) spec.loadBalancerSourceRanges = p.exposure.sourceRanges;
       values.service = {
         type: "LoadBalancer",
-        annotations: p.exposure.annotations,
-        ...(p.exposure.loadBalancerIP ? { spec: { loadBalancerIP: p.exposure.loadBalancerIP } } : {}),
+        annotations: { ...(p.exposure.internal ? internalLoadBalancerAnnotations(p.platform) : {}), ...p.exposure.annotations },
+        ...(Object.keys(spec).length ? { spec } : {}),
       };
       break;
+    }
     case "ingress":
       values.service = { type: "ClusterIP" };
       values.ingress = {
@@ -71,7 +127,7 @@ export function renderClusterValues(p: EnvProfile): Record<string, unknown> {
       break;
     case "cert-manager":
       values.highAvailability = {
-        replicaCount: 1,
+        replicaCount,
         certManager: {
           enabled: true,
           issuerName: p.tls.issuerName,
@@ -150,10 +206,14 @@ export class TeleportCluster extends pulumi.ComponentResource {
     const p = args.profile;
     const child: pulumi.CustomResourceOptions = { parent: this };
 
+    // `baseline` rather than `restricted`: the chart's auth/proxy pods now run with the hardened
+    // contexts above, so `restricted` should pass — flip the level once verified on your cluster
+    // (kubectl warnings from the `warn: restricted` label show what would be rejected).
     this.namespace = new k8s.core.v1.Namespace(
       `${name}-ns`,
-      { metadata: { name: p.teleport.namespace, labels: k8sLabels(p, "teleport", "control-plane") } },
-      child,
+      { metadata: { name: p.teleport.namespace, labels: namespaceLabels(p, "teleport", "baseline", "control-plane") } },
+      // The namespace holds the cluster state PVC (standalone) and every Teleport CR: never delete it by accident.
+      { ...child, protect: true },
     );
 
     const deps: pulumi.Resource[] = [this.namespace];
@@ -162,7 +222,7 @@ export class TeleportCluster extends pulumi.ComponentResource {
         new k8s.core.v1.Secret(
           `${name}-license`,
           { metadata: { name: "license", namespace: this.namespace.metadata.name }, stringData: { "license.pem": p.secrets.licensePem } },
-          child,
+          { ...child, protect: true },
         ),
       );
     }
@@ -189,8 +249,9 @@ export class TeleportCluster extends pulumi.ComponentResource {
             selector: TeleportCluster.proxySelector(p.teleport.releaseName),
             ports: [
               // host:3080 -> nodePort -> proxy; and in-cluster <svc>:3080 for the CoreDNS rewrite of the public address
-              { name: "tls", port: 443, targetPort: 3080, nodePort: p.exposure.nodePort, protocol: "TCP" },
-              { name: "public", port: Number(p.publicAddr.split(":")[1] ?? 443), targetPort: 3080, protocol: "TCP" },
+              { name: "tls", port: 443, targetPort: PROXY_PORT, nodePort: p.exposure.nodePort, protocol: "TCP" },
+              // Explicit nodePort: without it Kubernetes would open a random node port for this entry too.
+              { name: "public", port: Number(p.publicAddr.split(":")[1] ?? 443), targetPort: PROXY_PORT, nodePort: PUBLIC_NODE_PORT, protocol: "TCP" },
             ],
           },
         },

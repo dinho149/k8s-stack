@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	defer clt.Close()
+	defer func() { _ = clt.Close() }()
 
 	existing := map[string]cred{}
 	if b, err := os.ReadFile(*out); err == nil {
@@ -56,10 +56,10 @@ func main() {
 		existing[u] = c
 		fmt.Printf("enrolled %s (password + TOTP)\n", u)
 	}
-	if err := os.MkdirAll(dir(*out), 0o755); err != nil {
+	if err := os.MkdirAll(dir(*out), 0o700); err != nil {
 		fail(err)
 	}
-	b, _ := json.MarshalIndent(existing, "", "  ")
+	b, _ := json.MarshalIndent(existing, "", "  ") //nolint:gosec // this file IS the (0600, gitignored) credential store for test users
 	if err := os.WriteFile(*out, b, 0o600); err != nil {
 		fail(err)
 	}
@@ -96,10 +96,10 @@ func enrol(ctx context.Context, clt *client.Client, user string) (cred, error) {
 		return cred{}, err
 	}
 	_, err = clt.ChangeUserAuthentication(ctx, &proto.ChangeUserAuthenticationRequest{
-		TokenID:     tok.GetName(),
-		NewPassword: []byte(pw),
+		TokenID:                tok.GetName(),
+		NewPassword:            []byte(pw),
 		NewMFARegisterResponse: &proto.MFARegisterResponse{Response: &proto.MFARegisterResponse_TOTP{TOTP: &proto.TOTPRegisterResponse{Code: code}}},
-		NewDeviceName: "seed-totp",
+		NewDeviceName:          "seed-totp",
 	})
 	if err != nil {
 		return cred{}, fmt.Errorf("change authentication: %w", err)

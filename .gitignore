@@ -16,6 +16,13 @@ tests/.state/
 tests/policy/rendered/
 tests/policy/schemas/
 *.identity
+*.pem
+*.key
+
+# scanner output
+*.sarif
+trivy-results*
+sbom*.spdx.json
 
 # logs
 .logs/

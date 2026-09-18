@@ -6,7 +6,8 @@ if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER"; then ui::status ok 
 if (cd "$REPO_ROOT/infra/teleport" && pulumi stack ls --json 2>/dev/null | python3 -c 'import json,sys; s=[x for x in json.load(sys.stdin) if x["name"]=="'"$STACK"'"]; sys.exit(0 if s and s[0].get("lastUpdate") else 1)') ; then
   ui::status ok "pulumi" "stack $STACK, last update $(cd "$REPO_ROOT/infra/teleport" && pulumi stack ls --json 2>/dev/null | python3 -c 'import json,sys; s=[x for x in json.load(sys.stdin) if x["name"]=="'"$STACK"'"][0]; print(s.get("lastUpdate","?"), "resources:", s.get("resourceCount","?"))')"
 else ui::status warn "pulumi" "stack $STACK not deployed yet — make up"; fi
-ping="$(curl -sk --max-time 3 "https://$PROXY_ADDR/webapi/ping" 2>/dev/null || true)"
+# shellcheck disable=SC2086 # CURL_INSECURE_FLAG is empty or -k, decided once in _common.sh
+ping="$(curl -s $CURL_INSECURE_FLAG --max-time 3 "https://$PROXY_ADDR/webapi/ping" 2>/dev/null || true)"
 if [[ -n "$ping" ]]; then ui::status ok "teleport" "$(printf '%s' "$ping" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cluster_name"), "v"+d.get("server_version",""), "auth:", d.get("auth",{}).get("type"))' 2>/dev/null)"; else ui::status fail "teleport" "https://$PROXY_ADDR not answering"; fi
 
 ui::section "Pods"

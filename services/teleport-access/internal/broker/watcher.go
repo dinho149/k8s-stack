@@ -37,7 +37,7 @@ func (s *Service) watchOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	for {
 		select {
 		case <-ctx.Done():

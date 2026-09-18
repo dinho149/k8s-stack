@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
-"""Render `kubectl get pods -o json` (stdin) as pipe-separated rows for ui::table. Args: OK-mark BAD-mark."""
+"""Render `kubectl get pods -o json` (stdin) as pipe-separated rows for ui::table. Args: OK-mark BAD-mark.
+
+Invoked as `python3 pods.py` from status.sh (no shebang on purpose: it is a helper, not an executable)."""
 import datetime
 import json
 import sys

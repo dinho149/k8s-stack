@@ -1,0 +1,169 @@
+# Repo-specific Semgrep rules (run with the registry packs, see .pre-commit-config.yaml and ci.yml):
+#   semgrep scan --config .semgrep.yml --config p/golang --config p/typescript --config p/dockerfile \
+#                --config p/github-actions --config p/kubernetes --error
+# Rules are deliberately precise and low-noise: each one encodes a decision from docs/access-model.md
+# or the security-hardening plan, and each has exactly one sanctioned exception. Checks that gosec
+# (G112/G114 http timeouts) or hadolint (DL3002 last USER root) already enforce are not duplicated here.
+rules:
+  - id: k8s-teleport-go-insecure-skip-verify
+    languages: [go]
+    severity: ERROR
+    message: >-
+      InsecureSkipVerify disables TLS verification. Every service talks to Teleport over its real CA;
+      for the kind stack use TELEPORT_INSECURE only in tests/tools (see docs/testing.md).
+    pattern-either:
+      - pattern: |
+          tls.Config{..., InsecureSkipVerify: true, ...}
+      - pattern: |
+          $C.InsecureSkipVerify = true
+    paths:
+      exclude: ["**/*_test.go", "tests/tools/**"]
+
+  - id: k8s-teleport-go-trusts-x-teleport-user-header
+    languages: [go]
+    severity: ERROR
+    message: >-
+      Identity must come from the signed X-Teleport-Assertion header (internal/assertion), never from a
+      caller-controlled X-Teleport-User header.
+    pattern-either:
+      - pattern: $R.Header.Get("X-Teleport-User")
+      - pattern: $H.Get("X-Teleport-User")
+      - pattern: $R.Header["X-Teleport-User"]
+
+  - id: k8s-teleport-shell-tsh-insecure
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Do not hard-code --insecure. Use $TSH_INSECURE_FLAG from deploy/scripts/_common.sh (or tests/e2e/lib.sh),
+      which is set only for STACK=local against the self-signed kind proxy.
+    pattern-either:
+      - pattern: tsh --insecure
+      - pattern: tctl --insecure
+      - pattern: tsh $... --insecure
+    paths:
+      include: ["deploy/**", "tests/**", "Makefile", "infra/**/*.ts", ".github/**"]
+      # _common.sh / lib.sh own the guarded variable; index.ts renders the login hint conditionally on
+      # profile.teleport.insecure, which the profile invariants restrict to the kind platform.
+      exclude: ["deploy/scripts/_common.sh", "tests/e2e/lib.sh", "infra/teleport/index.ts"]
+
+  - id: k8s-teleport-postgres-trust-auth
+    languages: [generic]
+    severity: ERROR
+    message: POSTGRES_HOST_AUTH_METHOD=trust disables authentication; use scram-sha-256 with a generated password.
+    pattern-either:
+      - pattern: POSTGRES_HOST_AUTH_METHOD=trust
+      - pattern: 'POSTGRES_HOST_AUTH_METHOD: trust'
+      - pattern: |
+          "POSTGRES_HOST_AUTH_METHOD": "trust"
+      - pattern: |
+          name: "POSTGRES_HOST_AUTH_METHOD", value: "trust"
+    paths:
+      exclude: ["docs/**", ".semgrep.yml"]
+
+  - id: k8s-teleport-system-masters
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      system:masters bypasses all Kubernetes RBAC and cannot be revoked. Bind a ClusterRole to a named group
+      (k8s-teleport:cluster-admin) instead; see docs/access-model.md.
+    # A quoted string literal (TS/Go/JSON) or a YAML scalar; comments that merely mention the group do not match.
+    pattern-regex: '["'']system:masters["'']|(^|\s)-\s+system:masters\s*$|:\s+system:masters\s*$'
+    paths:
+      include: ["infra/**", "deploy/**", "services/**"]
+      exclude: ["**/*.test.ts", "**/*_test.go", "**/test/**"]
+
+  - id: k8s-teleport-dangerously-skip-permissions
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      The agent must never run Claude Code with --dangerously-skip-permissions; tool access is scoped via
+      allowedTools/--setting-sources '' (see services/access-agent/src/agent/claude-code-backend.ts).
+    pattern: dangerously-skip-permissions
+    paths:
+      exclude: [".semgrep.yml", "docs/**"]
+
+  - id: k8s-teleport-ts-child-env-passthrough
+    languages: [ts]
+    severity: WARNING
+    message: >-
+      Spawning with the full process.env leaks every secret (tokens, signing keys) to the child. Build an
+      explicit allow-list env (see buildEnv in claude-code-backend.ts).
+    pattern-either:
+      - pattern: 'spawn($CMD, $ARGS, {..., env: process.env, ...})'
+      - pattern: 'spawn($CMD, $ARGS, {..., env: {...process.env}, ...})'
+      - pattern: 'exec($CMD, {..., env: process.env, ...})'
+    paths:
+      exclude: ["**/*.test.ts", "**/test/**"]
+
+  - id: k8s-teleport-ts-secret-in-log
+    languages: [ts]
+    severity: WARNING
+    message: Do not log tokens, secrets or signing keys; the pino redaction list is the only safe place for them.
+    patterns:
+      - pattern: '$LOG.$LVL({..., $KEY: $V, ...}, ...)'
+      - metavariable-regex:
+          metavariable: $LVL
+          regex: ^(trace|debug|info|warn|error|fatal)$
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)^(token|secret|password|sharedToken|signingKey|apiKey|oauthToken|authorization|MCP_SHARED_TOKEN|BROKER_API_TOKEN|IDENTITY_SIGNING_KEY|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)$
+    paths:
+      exclude: ["**/*.test.ts", "**/test/**"]
+
+  - id: k8s-teleport-pulumi-config-set-secret-on-argv
+    languages: [bash]
+    severity: ERROR
+    message: >-
+      Secrets must reach `pulumi config set --secret` via stdin (printf '%s' "$v" | pulumi config set --secret KEY),
+      never as a command-line argument that ends up in `ps` and shell history.
+    pattern-either:
+      - pattern: pulumi config set $... --secret $... $KEY "$VAL"
+      - pattern: pulumi config set $... --secret $... $KEY $VAL
+    pattern-not-inside: |
+      $X | pulumi config set $...
+    paths:
+      include: ["deploy/scripts/**", "Makefile", ".github/**"]
+
+  - id: k8s-teleport-github-workflow-pull-request-target
+    languages: [yaml]
+    severity: ERROR
+    message: >-
+      pull_request_target runs with write permissions and secrets against fork code. Use pull_request and gate
+      secret-bearing jobs on github.event.pull_request.head.repo.full_name == github.repository.
+    pattern: pull_request_target
+    paths:
+      include: [".github/workflows/**"]
+
+  - id: k8s-teleport-github-workflow-unpinned-action
+    languages: [yaml]
+    severity: ERROR
+    message: Pin every GitHub Action to a full commit SHA (uses owner/repo@<40-hex> # vX.Y.Z).
+    pattern-regex: 'uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@(?![0-9a-f]{40}\b)[^\s#]+'
+    paths:
+      include: [".github/workflows/**"]
+
+  - id: k8s-teleport-k8s-container-missing-security-context
+    languages: [yaml]
+    severity: WARNING
+    message: >-
+      Every container must set securityContext (allowPrivilegeEscalation false, capabilities drop ALL,
+      readOnlyRootFilesystem, runAsNonRoot, seccompProfile RuntimeDefault). Rendered manifests are also
+      checked by checkov in CI.
+    patterns:
+      - pattern-inside: |
+          containers:
+            - ...
+      - pattern: |
+          image: $IMG
+      - pattern-not-inside: |
+          - ...
+            securityContext: ...
+    paths:
+      include: ["tests/policy/rendered/**", "deploy/**/*.yaml"]
+      exclude: ["deploy/kind/**"]
+
+  - id: k8s-teleport-dockerfile-latest-tag-without-digest
+    languages: [dockerfile]
+    severity: ERROR
+    message: Base images must be pinned by digest (FROM image:tag@sha256:...). Dependabot refreshes the digest.
+    pattern-regex: '^FROM\s+(?!.*@sha256:)(?!\$)(?![A-Za-z0-9_-]+\s*$)\S+'

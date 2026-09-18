@@ -25,7 +25,13 @@ if command -v claude >/dev/null 2>&1; then
   ui::status ok "claude code" "$(claude --version 2>/dev/null | head -1) — agent can use your subscription (make agent-cli)"
 else ui::status warn "claude code" "not installed — agent needs ANTHROPIC_API_KEY or 'npm i -g @anthropic-ai/claude-code'"; fi
 if command -v expect >/dev/null 2>&1; then ui::status ok "expect" "present (headless tsh login in e2e)"; else ui::status warn "expect" "missing — e2e tsh logins need it (brew/apt install expect)"; fi
-for opt in gitleaks kubeconform; do command -v "$opt" >/dev/null 2>&1 && ui::status ok "$opt" "$(command -v $opt)" || ui::status warn "$opt" "optional, used by make lint (brew install $opt)"; done
+for opt in gitleaks kubeconform pre-commit shellcheck hadolint actionlint golangci-lint semgrep trivy; do
+  if command -v "$opt" >/dev/null 2>&1; then ui::status ok "$opt" "$(command -v "$opt")"; else ui::status warn "$opt" "optional, used by make lint / pre-commit hooks (brew install $opt)"; fi
+done
+if [[ -d "$REPO_ROOT/.git" ]]; then
+  if [[ -x "$REPO_ROOT/.git/hooks/pre-commit" && -x "$REPO_ROOT/.git/hooks/pre-push" ]] && grep -q pre-commit "$REPO_ROOT/.git/hooks/pre-commit" 2>/dev/null; then ui::status ok "git hooks" "pre-commit + pre-push installed"
+  else ui::status warn "git hooks" "pre-commit hooks not installed — run: make hooks (CI runs the same checks, so commits without them fail there)"; fi
+fi
 
 ui::section "Environment"
 ctx="$(kubectl config current-context 2>/dev/null || echo none)"
@@ -36,7 +42,10 @@ if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
   if docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -q "${KIND_CLUSTER}-control-plane.*:${port}->"; then ui::status ok "host port $port" "in use by $KIND_CLUSTER (expected)"; else ui::status fail "host port $port" "in use by another process: $(lsof -nP -iTCP:$port -sTCP:LISTEN | awk 'NR==2{print $1}')"; fail=1; fi
 else ui::status ok "host port $port" "free"; fi
 ui::status ok "pulumi backend" "${PULUMI_BACKEND_URL:-file://./infra/.state}"
-if [[ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]]; then ui::status warn "pulumi passphrase" "PULUMI_CONFIG_PASSPHRASE unset — Makefile defaults to 'local-dev'"; else ui::status ok "pulumi passphrase" "set"; fi
+if [[ "$STACK" == "local" ]]; then
+  if [[ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]]; then ui::status warn "pulumi passphrase" "PULUMI_CONFIG_PASSPHRASE unset — Makefile defaults to 'local-dev' for STACK=local only"; else ui::status ok "pulumi passphrase" "set"; fi
+elif common::require_cloud_secrets >/dev/null 2>&1; then ui::status ok "pulumi secrets" "stack $STACK: shared backend, non-default secrets"
+else ui::status fail "pulumi secrets" "stack $STACK: file backend or default passphrase — run: make secrets-guard for details"; fail=1; fi
 if getent hosts teleport.127.0.0.1.nip.io >/dev/null 2>&1 || dscacheutil -q host -a name teleport.127.0.0.1.nip.io 2>/dev/null | grep -q 127.0.0.1 || python3 -c 'import socket,sys; sys.exit(0 if socket.gethostbyname("teleport.127.0.0.1.nip.io")=="127.0.0.1" else 1)' 2>/dev/null; then ui::status ok "nip.io DNS" "teleport.127.0.0.1.nip.io → 127.0.0.1"; else ui::status warn "nip.io DNS" "cannot resolve *.nip.io (offline?) — use make hosts for /etc/hosts fallback"; fi
 if [[ -f "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" ]]; then
   if grep -q 'claudeCodeOauthToken' "$REPO_ROOT/infra/teleport/Pulumi.$STACK.yaml" 2>/dev/null; then ui::status ok "agent auth" "subscription token stored for stack $STACK"

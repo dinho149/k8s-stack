@@ -6,7 +6,7 @@ case "$svc" in
   auth)       ns=teleport;         sel="app.kubernetes.io/component=auth";;
   proxy)      ns=teleport;         sel="app.kubernetes.io/component=proxy";;
   operator)   ns=teleport;         sel="app.kubernetes.io/name=teleport-operator";;
-  kube-agent) ns=teleport-agent;   sel="app=teleport-kube-agent";;
+  kube-agent) ns=teleport-agent;   sel="app.kubernetes.io/part-of=kube-agents";;
   ssh)        ns=teleport-dummies; sel="app.kubernetes.io/part-of=ssh-nodes";;
   postgres)   ns=teleport-dummies; sel="app=postgres";;
   broker)     ns=teleport-access;  sel="app=access-broker";;

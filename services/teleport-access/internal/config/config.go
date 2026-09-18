@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,13 +13,19 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// MinSecretLen is the minimum length (bytes) of every shared secret and signing key.
+const MinSecretLen = 32
+
 // Config is shared by the mcp and broker subcommands.
 type Config struct {
 	Teleport TeleportConfig `json:"teleport"`
 	MCP      MCPConfig      `json:"mcp"`
 	Broker   BrokerConfig   `json:"broker"`
-	LogLevel string         `json:"log_level"`
-	LogText  bool           `json:"log_text"`
+	// IdentitySigningKey (TA_IDENTITY_SIGNING_KEY) verifies the per-turn identity assertions the
+	// chat agent signs (X-Teleport-Assertion); shared by the MCP server and the broker.
+	IdentitySigningKey string `json:"identity_signing_key"`
+	LogLevel           string `json:"log_level"`
+	LogText            bool   `json:"log_text"`
 }
 
 // TeleportConfig says how to reach the cluster.
@@ -69,7 +76,7 @@ func Load() (*Config, error) {
 		LogLevel: "info",
 	}
 	if f := os.Getenv("TA_CONFIG_FILE"); f != "" {
-		b, err := os.ReadFile(f)
+		b, err := os.ReadFile(filepath.Clean(f)) //nolint:gosec // operator-supplied config path
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", f, err)
 		}
@@ -113,6 +120,7 @@ func Load() (*Config, error) {
 		}
 		c.Broker.PollInterval = d
 	}
+	str("TA_IDENTITY_SIGNING_KEY", &c.IdentitySigningKey)
 	str("TA_LOG_LEVEL", &c.LogLevel)
 	boolean("TA_LOG_TEXT", &c.LogText)
 	return c, nil
@@ -124,13 +132,22 @@ func (c *Config) Validate(sub string) error {
 	if c.Teleport.Addr == "" && c.Teleport.IdentityFile != "" {
 		errs = append(errs, "teleport.addr (TA_TELEPORT_ADDR) is required with an identity file")
 	}
-	if strings.Contains(sub, "mcp") && c.MCP.HTTPAddr != "" && c.MCP.SharedToken == "" {
-		errs = append(errs, "mcp.shared_token (TA_MCP_SHARED_TOKEN) is required when serving HTTP")
-	}
-	if strings.Contains(sub, "broker") {
-		if c.Broker.APIToken == "" {
-			errs = append(errs, "broker.api_token (TA_BROKER_API_TOKEN) is required")
+	secret := func(name, env, v string, required bool) {
+		switch {
+		case v == "" && required:
+			errs = append(errs, fmt.Sprintf("%s (%s) is required", name, env))
+		case v != "" && len(v) < MinSecretLen:
+			errs = append(errs, fmt.Sprintf("%s (%s) must be at least %d bytes", name, env, MinSecretLen))
 		}
+	}
+	mcpHTTP := strings.Contains(sub, "mcp") && c.MCP.HTTPAddr != ""
+	broker := strings.Contains(sub, "broker")
+	secret("mcp.shared_token", "TA_MCP_SHARED_TOKEN", c.MCP.SharedToken, mcpHTTP)
+	secret("mcp.broker_token", "TA_MCP_BROKER_TOKEN", c.MCP.BrokerToken, false)
+	secret("identity_signing_key", "TA_IDENTITY_SIGNING_KEY", c.IdentitySigningKey, mcpHTTP || broker)
+	if broker {
+		secret("broker.api_token", "TA_BROKER_API_TOKEN", c.Broker.APIToken, true)
+		secret("broker.webhook_secret", "TA_BROKER_WEBHOOK_SECRET", c.Broker.WebhookSecret, c.Broker.AgentWebhookURL != "")
 		if c.Broker.Mode != "watch" && c.Broker.Mode != "poll" {
 			errs = append(errs, "broker.mode must be watch|poll")
 		}

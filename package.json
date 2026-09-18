@@ -12,6 +12,9 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
   "engines": {
     "node": ">=22"
   }

@@ -5,24 +5,43 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default; each job grants only what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   TELEPORT_VERSION: "18.11.1"
-  PULUMI_CONFIG_PASSPHRASE: ci-passphrase
+  # Throwaway passphrase for the kind stack and for CI previews of the cloud stacks (file backend).
+  # The committed Pulumi.<stack>.yaml files carry an `encryptionsalt` minted with the local dev passphrase;
+  # they hold no secret values (cloud stacks must use a KMS provider, enforced by `make secrets-guard`), so CI
+  # opens them with that same throwaway passphrase to render previews and the kind e2e stack.
+  PULUMI_CONFIG_PASSPHRASE: local-dev
   NO_COLOR: "1"
+  GOTOOLCHAIN: auto
 
 jobs:
   lint-and-unit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
-      - run: npm ci --no-fund --no-audit
+      - run: npm ci --no-fund
+      - name: npm audit (high and above fails)
+        run: npm audit --audit-level=high
       - name: Typecheck + unit tests (Pulumi, agent)
         run: |
           npm run typecheck --workspaces --if-present
+          npm run lint --workspaces --if-present
           npm test --workspaces --if-present
       - name: Go vet + unit tests
         run: |
@@ -30,45 +49,350 @@ jobs:
           go -C services/teleport-access test ./...
           go -C tests/tools build ./...
           go -C tests/integration vet -tags=integration ./...
-      - name: Secrets scan
-        uses: gitleaks/gitleaks-action@v2
-        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
       - name: Shell syntax
         run: for f in deploy/scripts/*.sh deploy/scripts/lib/*.sh tests/e2e/*.sh; do bash -n "$f"; done
+      - name: Render Teleport CRs offline
+        run: make render
+
+  pre-commit:
+    # Same hooks developers run locally (make hooks); catches `git commit --no-verify`.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, fetch-depth: 0 }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+      - run: npm ci --no-fund
+      - name: Cache pre-commit environments
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: pip install pre-commit==4.6.2
+      - name: pre-commit (commit stage)
+        run: pre-commit run --all-files --show-diff-on-failure
+      - name: pre-commit (push stage, semgrep has its own job)
+        run: SKIP=semgrep pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
+
+  actionlint-hadolint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with: { args: -color }
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with: { recursive: true, dockerfile: "**/Dockerfile", config: .hadolint.yaml, failure-threshold: warning }
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [services/teleport-access, tests/tools]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          work-dir: ${{ matrix.module }}
+          go-version-input: "1.26"
+          go-package: ./...
+          repo-checkout: false
+
+  govulncheck-integration:
+    # Build-tagged module: the action cannot pass -tags, so run the CLI directly.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - run: govulncheck -C tests/integration -tags=integration ./...
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: osv-scanner (lockfiles)
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+            --lockfile=services/teleport-access/go.mod
+            --lockfile=tests/tools/go.mod
+            --lockfile=tests/integration/go.mod
+            --format=sarif
+            --output=osv.sarif
+        continue-on-error: true
+      - name: osv-scanner (fail on findings)
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+            --lockfile=services/teleport-access/go.mod
+            --lockfile=tests/tools/go.mod
+            --lockfile=tests/integration/go.mod
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('osv.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: osv.sarif, category: osv-scanner }
+
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep:1.177.0@sha256:acaac22ffc7b7cc5926de0751b223bce0b2491c33d18422fa72f632c78d81198
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: semgrep (repo rules + registry packs)
+        run: |
+          semgrep scan --metrics=off --error \
+            --config .semgrep.yml --config p/golang --config p/typescript --config p/dockerfile \
+            --config p/github-actions --config p/kubernetes \
+            --sarif --output semgrep.sarif
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: semgrep.sarif, category: semgrep }
+
+  checkov:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --no-fund
+      - name: Render manifests offline
+        run: make render
+      # The action's pinned checkov (2.0.x) accepts one framework per run and always writes ./results.sarif,
+      # so: one step per framework, rename the report after each, upload each under its own category.
+      - name: checkov (rendered Kubernetes manifests)
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        with:
+          directory: tests/policy/rendered
+          framework: kubernetes
+          quiet: true
+          output_format: sarif
+      - if: always()
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-k8s.sarif; fi
+      - name: checkov (Dockerfiles)
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        with:
+          directory: .
+          framework: dockerfile
+          skip_path: node_modules,infra/.state,tests/.state,.logs
+          quiet: true
+          output_format: sarif
+      - if: always()
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-dockerfile.sarif; fi
+      - name: checkov (GitHub workflows)
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        with:
+          directory: .github/workflows
+          framework: github_actions
+          quiet: true
+          output_format: sarif
+      - if: always()
+        run: if [ -f results.sarif ]; then mv results.sarif checkov-workflows.sarif; fi
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('checkov-k8s.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: checkov-k8s.sarif, category: checkov-kubernetes }
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('checkov-dockerfile.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: checkov-dockerfile.sarif, category: checkov-dockerfile }
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('checkov-workflows.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: checkov-workflows.sarif, category: checkov-workflows }
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  repo-scan:
+    # Trivy over the working tree: secrets, misconfigurations (Dockerfiles, workflows, kind config) and
+    # vulnerable dependencies in the lockfiles.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # Two passes: SARIF for the Security tab (never fails the job), then a human-readable table that enforces
+      # the gate, so a failure shows the finding in the job log instead of a bare exit code.
+      - name: trivy fs (SARIF for code scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "0"
+          skip-dirs: node_modules,infra/.state,tests/.state,.logs
+          format: sarif
+          output: trivy-fs.sarif
+      - name: trivy fs (gate on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "1"
+          skip-dirs: node_modules,infra/.state,tests/.state,.logs
+          format: table
+          skip-setup-trivy: true
+          cache: "false"
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles('trivy-fs.sarif') != ''
+        continue-on-error: true
+        with: { sarif_file: trivy-fs.sarif, category: trivy-fs }
+
+  image-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: teleport-access, context: services/teleport-access }
+          - { name: access-agent, context: services/access-agent }
+          - { name: ssh-node, context: deploy/images/ssh-node }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build ${{ matrix.name }} (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          # The agent needs the repo root as the `lockfile` context (npm workspace lockfile); harmless for the rest.
+          build-contexts: lockfile=.
+          push: false
+          load: true
+          tags: k8s-teleport/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: trivy image (SARIF for code scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: k8s-teleport/${{ matrix.name }}:ci
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "0"
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+      - name: trivy image (gate on HIGH/CRITICAL, table in the log)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: k8s-teleport/${{ matrix.name }}:ci
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "1"
+          format: table
+          skip-setup-trivy: true
+          cache: "false"
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.name)) != ''
+        continue-on-error: true
+        with: { sarif_file: "trivy-${{ matrix.name }}.sarif", category: "trivy-image-${{ matrix.name }}" }
+      - name: grype (second opinion)
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: k8s-teleport/${{ matrix.name }}:ci
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: false
+          output-format: table
 
   preview-cloud-stacks:
     runs-on: ubuntu-latest
     needs: lint-and-unit
+    permissions:
+      contents: read
     strategy:
+      fail-fast: false
       matrix:
         stack: [dev-eks, dev-gke, dev-aks, prod-eks]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
-      - uses: pulumi/actions@v6
-        with: { command: version }
-      - uses: helm/kind-action@v1
+      - uses: pulumi/setup-pulumi@b374ceb6168550de27c6eba92e01c1a774040e11 # v2.0.0
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
         with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
-      - run: npm ci --no-fund --no-audit
+      - run: npm ci --no-fund
       - name: pulumi preview (rendered against the kind context)
+        # CI_PREVIEW=1 skips the cloud secrets guard for `preview` only (file backend + throwaway passphrase);
+        # make preview exports TELEPORT_ALLOW_KIND_CONTEXT=1 so the kind-* kubeContext invariant is relaxed.
+        env: { CI_PREVIEW: "1" }
         run: make preview STACK=${{ matrix.stack }} PULUMI_ARGS="--config teleport:kubeContext=kind-teleport-local"
 
   kind-e2e:
     runs-on: ubuntu-latest
     needs: lint-and-unit
+    permissions:
+      contents: read
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 24, cache: npm }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version: "1.26", cache-dependency-path: "**/go.sum" }
-      - uses: pulumi/actions@v6
-        with: { command: version }
-      - uses: helm/kind-action@v1
+      - uses: pulumi/setup-pulumi@b374ceb6168550de27c6eba92e01c1a774040e11 # v2.0.0
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
         with: { cluster_name: teleport-local, config: deploy/kind/cluster.yaml }
-      - run: npm ci --no-fund --no-audit
+      - run: npm ci --no-fund
       - name: Install tsh/tctl + expect
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq expect
@@ -81,11 +405,24 @@ jobs:
         run: make test-integration
       - name: tsh end-to-end
         run: make test-e2e
-      - name: Diagnostics on failure
+      - name: Collect diagnostics
         if: failure()
         run: |
-          kubectl --context kind-teleport-local get pods -A
-          for ns in teleport teleport-agent teleport-dummies teleport-access; do kubectl --context kind-teleport-local -n $ns get events --sort-by=.lastTimestamp | tail -30; done
-          kubectl --context kind-teleport-local -n teleport logs deploy/teleport-cluster-operator --tail=100 || true
-          kubectl --context kind-teleport-local -n teleport-access logs deploy/access-broker --all-containers --tail=100 || true
-          tail -100 .logs/*.log || true
+          mkdir -p .logs/diag
+          kubectl --context kind-teleport-local get pods -A > .logs/diag/pods.txt 2>&1 || true
+          for ns in teleport teleport-agent teleport-dummies teleport-access; do
+            kubectl --context kind-teleport-local -n "$ns" get events --sort-by=.lastTimestamp > ".logs/diag/events-$ns.txt" 2>&1 || true
+          done
+          kubectl --context kind-teleport-local -n teleport logs deploy/teleport-cluster-operator --tail=300 > .logs/diag/operator.log 2>&1 || true
+          kubectl --context kind-teleport-local -n teleport-access logs deploy/access-broker --all-containers --tail=300 > .logs/diag/broker.log 2>&1 || true
+          kubectl --context kind-teleport-local -n teleport-access logs deploy/teleport-mcp --all-containers --tail=300 > .logs/diag/mcp.log 2>&1 || true
+          # Never ship credentials: tests/.state and identities stay out of the artifact.
+          find .logs -type f \( -name '*.identity' -o -name 'users.json' -o -name '.totp-*' \) -delete || true
+      - name: Upload diagnostics (restricted artifact, 5 days)
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kind-e2e-logs
+          path: .logs
+          retention-days: 5
+          if-no-files-found: ignore

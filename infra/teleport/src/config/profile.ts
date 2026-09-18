@@ -73,18 +73,80 @@ export function buildProfile(input: DeepPartial<StackConfigInput>, stack: string
   return { ...cfg, stack, teleport, labels: { env: cfg.env, "managed-by": "pulumi", stack }, secrets };
 }
 
-function enforceInvariants(cfg: StackConfig, stack: string, secrets: Secrets): void {
+/** Roles that must never be a standing assignment off the local stack. */
+const STANDING_ADMIN_ROLES = ["editor", "access"];
+/** Container images every stack deploys; prod must pin each by digest. */
+function requiredImages(cfg: StackConfig): string[] {
+  const names: string[] = [];
+  if (cfg.services.mcp.enabled || cfg.services.broker.enabled) names.push("teleport-access");
+  if (cfg.services.agent.enabled) names.push("access-agent");
+  if (cfg.dummies.enabled) names.push("ssh-node");
+  return names;
+}
+
+/**
+ * CI previews of the cloud stack files run against the kind context and without the GitHub client
+ * secret; `TELEPORT_ALLOW_KIND_CONTEXT=1` allows exactly those two things and nothing else.
+ */
+export function ciPreviewEscapeHatch(): boolean {
+  return process.env.TELEPORT_ALLOW_KIND_CONTEXT === "1";
+}
+
+export function enforceInvariants(cfg: StackConfig, stack: string, secrets: Secrets): void {
   const problems: string[] = [];
-  if (cfg.insecureLocal && cfg.platform !== "kind") problems.push("insecureLocal may only be true on platform=kind");
+  const local = cfg.env === "local";
+  const prod = cfg.env === "prod";
+  const kind = cfg.platform === "kind";
+  const allowPreview = ciPreviewEscapeHatch();
+
+  if (cfg.insecureLocal && !kind) problems.push("insecureLocal may only be true on platform=kind");
   if (cfg.edition === "enterprise" && !secrets.licensePem) problems.push("edition=enterprise requires the secret teleport:licensePem");
   if (cfg.auth.type === "github" && !cfg.github)
     problems.push("auth.type=github requires teleport:github (clientId, organization, teamsToRoles) and the secret teleport:githubClientSecret");
-  if (cfg.auth.type === "github" && cfg.github && !secrets.githubClientSecret)
-    problems.push("teleport:github is set but the secret teleport:githubClientSecret is missing (pulumi config set --secret teleport:githubClientSecret ...)");
-  if (cfg.exposure.type === "nodeport" && cfg.platform !== "kind") problems.push("exposure.type=nodeport is only meant for kind");
-  if (cfg.platform === "kind" && cfg.kubeContext === "kind-kind") problems.push('refusing to target the default kind cluster context "kind-kind"');
-  if (cfg.chartMode.mode !== "standalone" && cfg.platform === "kind") problems.push("cloud chartMode requires a cloud platform");
+  if (cfg.auth.type === "github" && cfg.github && !secrets.githubClientSecret) {
+    const msg = "teleport:github is set but the secret teleport:githubClientSecret is missing (make github-sso, or: pulumi config set --secret teleport:githubClientSecret ...)";
+    if (allowPreview) pulumi.log.warn(`${msg}; TELEPORT_ALLOW_KIND_CONTEXT=1: the GitHub connector is not rendered in this preview`);
+    else problems.push(msg);
+  }
+  if (cfg.exposure.type === "nodeport" && !kind) problems.push("exposure.type=nodeport is only meant for kind");
+  if (kind && cfg.kubeContext === "kind-kind") problems.push('refusing to target the default kind cluster context "kind-kind"');
+  if (!kind && cfg.kubeContext.startsWith("kind-") && !allowPreview)
+    problems.push(`platform=${cfg.platform} must not target the kind context "${cfg.kubeContext}" (CI previews set TELEPORT_ALLOW_KIND_CONTEXT=1)`);
+  if (cfg.chartMode.mode !== "standalone" && kind) problems.push("cloud chartMode requires a cloud platform");
   if (cfg.services.agent.enabled && !cfg.services.mcp.enabled) problems.push("services.agent requires services.mcp");
+
+  // --- no standing privilege off the local stack
+  if (!local) {
+    for (const u of cfg.users) {
+      const bad = u.roles.filter((r) => STANDING_ADMIN_ROLES.includes(r));
+      if (bad.length) problems.push(`users[${u.name}] holds standing admin role(s) ${bad.join(", ")}; request break-glass-editor instead (env=${cfg.env})`);
+    }
+    for (const m of cfg.github?.teamsToRoles ?? []) {
+      const bad = m.roles.filter((r) => STANDING_ADMIN_ROLES.includes(r));
+      if (bad.length) problems.push(`github.teamsToRoles[${m.team}] maps to standing admin role(s) ${bad.join(", ")}; use requester/approver/auditor (env=${cfg.env})`);
+    }
+    if (cfg.auth.type === "local") problems.push(`auth.type=local is only allowed on env=local (env=${cfg.env}); configure SSO (make github-sso)`);
+    if (cfg.auth.localAuth) problems.push(`auth.localAuth must be false off env=local (env=${cfg.env})`);
+    if (cfg.auth.secondFactors.includes("otp")) problems.push(`auth.secondFactors must not include otp off env=local (env=${cfg.env}); use [webauthn]`);
+  }
+
+  // --- production hardening
+  if (prod && cfg.chartMode.mode === "standalone") problems.push("env=prod requires a managed backend (chartMode aws/gcp/azure), not standalone");
+  if (prod && cfg.dummies.enabled) problems.push("env=prod must not deploy dummy resources (dummies.enabled=false)");
+  if (prod && cfg.images.pullPolicy === "Always") problems.push('env=prod requires images.pullPolicy IfNotPresent (images are pinned by digest, not re-pulled)');
+  if (prod) {
+    for (const img of requiredImages(cfg)) if (!cfg.images.digests[img]) problems.push(`env=prod requires images.digests["${img}"] (sha256:...) for every deployed image`);
+  }
+
+  // --- services never exposed beyond their design
+  if (cfg.services.harness.enabled && !kind) problems.push("services.harness (CI harness bot) may only be enabled on platform=kind");
+  if (cfg.services.agent.enabled && !kind && cfg.services.agent.allowedEmailDomains.length === 0)
+    problems.push("services.agent.allowedEmailDomains must be non-empty when the agent is enabled off kind (identity fails closed)");
+  if (cfg.services.agent.enabled && cfg.services.agent.adapters.includes("slack") && cfg.services.agent.slackAllowedTeamIds.length === 0)
+    problems.push("services.agent.slackAllowedTeamIds must be non-empty when the slack adapter is enabled");
+  if (cfg.exposure.type === "loadbalancer" && !kind && !cfg.exposure.internal && cfg.exposure.sourceRanges.length === 0)
+    problems.push("exposure.loadbalancer: an internet-facing load balancer (internal=false) requires non-empty sourceRanges");
+
   if (problems.length) throw new Error(`invalid configuration for stack "${stack}":\n${problems.map((p) => `  - ${p}`).join("\n")}`);
 }
 

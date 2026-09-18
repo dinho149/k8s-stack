@@ -14,5 +14,5 @@ export const kindDefaults: DeepPartial<StackConfigInput> = {
   images: { registry: "", tag: "dev", pullPolicy: "IfNotPresent" },
   insecureLocal: true,
   dummies: { enabled: true, sshNodes: { dev: 2, prod: 1 }, postgres: true, mysql: false, httpbin: true, cloudStandin: "static" },
-  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false } },
+  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: false, adapters: ["cli"], auth: "api-key", persistSessions: false }, harness: { enabled: true } },
 };

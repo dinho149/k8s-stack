@@ -66,6 +66,12 @@ export interface ButtonClick {
   message: PostedMessageRef;
   /** Free text the approver typed (reason); adapters that support modals fill this in. */
   reason?: string;
+  /**
+   * Platform context of the verified event that carried the click (Teams TurnContext, the
+   * Google Chat event's verified sender, Slack's cache-bypass flag). Passed back to
+   * `resolveUser` so the clicker is re-verified against the platform, never the payload.
+   */
+  ctx?: unknown;
   respond(text: string, ephemeral?: boolean): Promise<void>;
 }
 

@@ -123,7 +123,13 @@ export class TeamsAdapter implements ChatAdapter {
     }
 
     if (a.type === ActivityTypes.Invoke && a.name === "adaptiveCard/action" && this.onBtn) {
-      const data = (a.value?.action?.data ?? {}) as { requestId: string; nonce: string; button: ButtonId; reason?: string };
+      const raw = (a.value?.action?.data ?? {}) as Record<string, unknown>;
+      if (typeof raw.requestId !== "string" || typeof raw.nonce !== "string" || !["approve", "deny", "details"].includes(String(raw.button))) {
+        this.log.warn({ from: a.from?.id }, "ignoring teams card action with malformed data");
+        await ctx.sendActivity({ type: ActivityTypes.InvokeResponse, value: { status: 400, body: { statusCode: 400, type: "application/vnd.microsoft.error", value: "malformed action" } } as InvokeResponse });
+        return;
+      }
+      const data = { requestId: raw.requestId, nonce: raw.nonce, button: raw.button as ButtonId, reason: typeof raw.reason === "string" ? raw.reason : undefined };
       const user = await this.resolveUser(a.from.id, ctx);
       let responseText = "";
       await this.onBtn({
@@ -132,6 +138,7 @@ export class TeamsAdapter implements ChatAdapter {
         requestId: data.requestId,
         nonce: data.nonce,
         reason: data.reason,
+        ctx, // TurnContext: lets the notification service re-verify the clicker via TeamsInfo.getMember
         message: { conversation: { platform: "teams", channelId: a.conversation.id, raw: ref }, messageId: a.replyToId ?? "" },
         respond: async (t) => void (responseText = t),
       });
