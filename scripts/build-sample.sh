@@ -5,6 +5,7 @@ name=${STACK_NAME:-stack-local}
 registry=stack-registry
 if docker container inspect "$registry" >/dev/null 2>&1; then
   [[ $(docker inspect -f '{{index .Config.Labels "stack.platform/managed"}}' "$registry") == true ]] || { echo 'Refusing to use an unmanaged registry' >&2; exit 1; }
+  docker start "$registry" >&2
 else
   docker run -d --restart=unless-stopped --label stack.platform/managed=true -p 127.0.0.1:5005:5000 --name "$registry" registry:2.8.3 >&2
 fi

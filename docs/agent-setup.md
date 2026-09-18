@@ -1,6 +1,6 @@
 # Claude Agent SDK and chat installation
 
-Run `npm ci`, then configure the agent environment and run `npm run agent`. The TypeScript implementation lives in `services/agent`. Use organization cloud credentials and approved model IDs; do not use personal Claude subscription credentials for this shared service.
+For local development, run `make setup` and `make up`, configure the agent in `.env` as described in the [README](../README.md#optional-agent), then run `make agent`. The TypeScript implementation lives in `services/agent`. Use organization cloud credentials and approved model IDs; do not use personal Claude subscription credentials for this shared service.
 
 ## Providers
 

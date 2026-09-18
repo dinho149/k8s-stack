@@ -29,7 +29,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: stack <init|doctor|serve|up|status|down|benchmark> [options]")
+		return errors.New("usage: stack <init|config|doctor|serve|up|status|down|benchmark> [options]")
 	}
 	command := os.Args[1]
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -64,6 +64,8 @@ func run() error {
 		return e
 	}
 	switch command {
+	case "config":
+		return json.NewEncoder(os.Stdout).Encode(c)
 	case "doctor":
 		failed := false
 		for _, tool := range []string{"docker", "kind", "kubectl", "helm", "tofu", "node"} {
