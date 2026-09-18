@@ -51,7 +51,7 @@ test('request flow: client validation, preview prediction and cap, idempotent su
   await page.getByLabel('Reason').fill('poking around the dev boxes');
   await page.getByLabel('How long').selectOption('4h');
   await review.click();
-  await expect(page.getByText('Approved automatically')).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Approved automatically' })).toBeVisible();
   await expect(page.getByText('will be capped to 1h0m0s')).toBeVisible();
   await expect(page.getByLabel('equivalent tsh command', { exact: true })).toContainText(
     'tsh request create --roles dev-ssh',
