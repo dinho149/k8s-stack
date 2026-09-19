@@ -42,6 +42,7 @@ describe("buildProfile", () => {
     expect(p.teleport.insecure).toBe(true);
     expect(p.labels).toEqual({ env: "local", "managed-by": "pulumi", stack: "local" });
     expect(p.services.harness.enabled).toBe(true);
+    expect(p.services.portal).toEqual({ enabled: true, identities: { "local-developer": "alice" }, identityFallback: "username" });
     expect(p.tls).toEqual({ mode: "local-files", certFile: "../../.dogfood/teleport/tls/teleport.crt", keyFile: "../../.dogfood/teleport/tls/teleport.key", caFile: "../../.dogfood/teleport/tls/ca.crt" });
   });
 

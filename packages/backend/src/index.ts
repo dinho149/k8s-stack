@@ -10,6 +10,23 @@ import {
   scaffolderActionsExtensionPoint,
 } from '@backstage/plugin-scaffolder-node';
 
+import type { Config } from '@backstage/config';
+
+/** The Teleport-side subject for a Backstage user: an explicit teleport.identities mapping, or the entity
+ *  name itself when teleport.subjectFromEntityName is on (GitHub sign-in: the entity name IS the login,
+ *  which is also the Teleport username). */
+function teleportSubject(config: Config, userEntityRef: string): string | undefined {
+  const mapped = (config.getOptionalConfigArray('teleport.identities') ?? []).find(
+    (m) => m.getString('entityRef') === userEntityRef,
+  );
+  if (mapped) return mapped.getString('subject');
+  if (config.getOptionalBoolean('teleport.subjectFromEntityName')) {
+    const name = userEntityRef.split('/').pop() ?? '';
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? name : undefined;
+  }
+  return undefined;
+}
+
 const platformPlugin = createBackendPlugin({
   pluginId: 'platform',
   register(env) {
@@ -27,6 +44,55 @@ const platformPlugin = createBackendPlugin({
           try {
             const credentials = await httpAuth.credentials(req, { allow: ['user'] });
             const info = await userInfo.getUserInfo(credentials);
+            let body = req.body;
+            let method = req.method;
+            if (req.path.startsWith('/access/')) {
+              // Teleport access pages: forwarded to the access portal API (teleport-access portal) with the
+              // portal's own service token and subject mapping. The browser never sends a subject.
+              const portalUrl = config.getOptionalString('teleport.portalUrl');
+              const portalToken = config.getOptionalString('teleport.serviceToken');
+              if (!portalUrl || !portalToken) {
+                res
+                  .status(503)
+                  .json({ error: 'Teleport access is not configured', code: 'not_configured' });
+                return;
+              }
+              const subject = teleportSubject(config, info.userEntityRef);
+              if (!subject) {
+                res
+                  .status(403)
+                  .json({ error: 'No Teleport identity mapping', code: 'unmapped_subject' });
+                return;
+              }
+              const rest = req.path.slice('/access'.length);
+              const read =
+                /^\/(me|cluster|roles(?:\/[A-Za-z0-9._-]{1,64})?|requestable-roles|resources(?:\/accessible|\/(node|db|kube_cluster|app|windows_desktop)\/[A-Za-z0-9._-]{1,128}\/access)?|approvers|requests(?:\/[A-Za-z0-9-]{8,36})?|approvals)$/;
+              const write = /^\/requests(?:\/preview|\/[A-Za-z0-9-]{8,36}\/(approve|deny))?$/;
+              if (
+                !((method === 'GET' && read.test(rest)) || (method === 'POST' && write.test(rest)))
+              ) {
+                res.sendStatus(404);
+                return;
+              }
+              const target = new URL('/v1' + rest, portalUrl);
+              target.search = new URL(req.originalUrl, 'http://local').search; // ?state=, ?q=, ?kind=
+              const response = await fetch(target, {
+                method,
+                headers: {
+                  Authorization: `Bearer ${portalToken}`,
+                  'X-Dogfood-Subject': subject,
+                  'Content-Type': 'application/json',
+                  'Idempotency-Key': req.header('Idempotency-Key') ?? '',
+                },
+                body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+                signal: AbortSignal.timeout(30000),
+              });
+              res
+                .status(response.status)
+                .type('application/json')
+                .send(await response.text());
+              return;
+            }
             const mappings = config.getConfigArray('platform.identities');
             const match = mappings.find((m) => m.getString('entityRef') === info.userEntityRef);
             if (!match) {
@@ -36,8 +102,6 @@ const platformPlugin = createBackendPlugin({
             const subject = match.getString('subject');
             const serviceToken = config.getString('platform.serviceToken');
             let target = new URL('/v1' + req.path, config.getString('platform.apiUrl'));
-            let body = req.body;
-            let method = req.method;
             if (req.path === '/agent') {
               if (req.method !== 'POST') {
                 res.sendStatus(405);
@@ -145,6 +209,7 @@ const scaffoldModule = createBackendModule({
 const backend = createBackend();
 backend.add(import('@backstage/plugin-auth-backend'));
 backend.add(import('@backstage/plugin-auth-backend-module-oidc-provider'));
+backend.add(import('@backstage/plugin-auth-backend-module-github-provider'));
 if (process.env.DOGFOOD_LOCAL_DEVELOPMENT === '1')
   backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 backend.add(import('@backstage/plugin-catalog-backend'));

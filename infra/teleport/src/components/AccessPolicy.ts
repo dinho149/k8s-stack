@@ -18,9 +18,9 @@ export interface AccessPolicyArgs {
   cluster: TeleportCluster;
 }
 
-/** Which bots a profile deploys: the harness only where explicitly enabled (kind). */
+/** Which bots a profile deploys: the harness only where explicitly enabled (kind); the portal where enabled. */
 export function enabledBots(p: Pick<EnvProfile, "services">): BotKey[] {
-  return (Object.keys(BOTS) as BotKey[]).filter((k) => k !== "harness" || p.services.harness.enabled);
+  return (Object.keys(BOTS) as BotKey[]).filter((k) => (k !== "harness" || p.services.harness.enabled) && (k !== "portal" || p.services.portal.enabled));
 }
 
 export class AccessPolicy extends pulumi.ComponentResource {

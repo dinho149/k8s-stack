@@ -6,6 +6,7 @@ import { Alert, Brand, Credit, Dialog, Empty, Icon } from './ui';
 import { Overview } from './pages/overview';
 import { CreateEnvironment, EnvironmentDetail, EnvironmentList } from './pages/environments';
 import { Assistant, Policies, Releases, Tools } from './pages/workflows';
+import { AccessLayout } from './pages/access';
 
 const navigation = [
   { to: '/', label: 'Overview', icon: 'grid' },
@@ -13,6 +14,7 @@ const navigation = [
   { to: '/releases', label: 'Releases', icon: 'release' },
   { to: '/tools', label: 'Tools', icon: 'tools' },
   { to: '/policies', label: 'Policies', icon: 'shield' },
+  { to: '/access', label: 'Access', icon: 'key' },
   { to: '/assistant', label: 'Assistant', icon: 'spark' },
 ];
 export function Workspace({
@@ -131,6 +133,7 @@ function Shell({ onSignOut, account }: { onSignOut?: () => Promise<void>; accoun
           <Route path="/tools" element={<Tools />} />
           <Route path="/policies" element={<Policies />} />
           <Route path="/assistant" element={<Assistant />} />
+          <Route path="/access/*" element={<AccessLayout />} />
           <Route
             path="*"
             element={

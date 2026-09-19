@@ -17,5 +17,8 @@ export const eksDefaults: DeepPartial<StackConfigInput> = {
   images: { registry: "ghcr.io/CHANGE-ME/k8s-teleport", tag: "latest", pullPolicy: "IfNotPresent" },
   insecureLocal: false,
   dummies: { enabled: false, sshNodes: { dev: 1, prod: 1 }, postgres: true, mysql: false, httpbin: true, cloudStandin: "static" },
-  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: true, adapters: ["slack"], auth: "api-key", persistSessions: false } },
+  services: { mcp: { enabled: true }, broker: { enabled: true, force: false }, agent: { enabled: true, adapters: ["slack"], auth: "api-key", persistSessions: false },
+    // Teleport usernames are GitHub logins (the Backstage GitHub sign-in yields the same login). Set services.portal.backstage
+    // ({ namespace, podLabels: { app: "dogfood-backstage" } }) in the stack config to open the portal API to the Backstage backend.
+    portal: { enabled: true, identities: {}, identityFallback: "username" } },
 };

@@ -430,3 +430,27 @@ func TestSignature(t *testing.T) {
 		t.Fatalf("sig = %s", sig)
 	}
 }
+
+func TestPortalDecisionIsAnnotatedAsPortal(t *testing.T) {
+	svc, f := newSvc(t, "")
+	svc.Notifier = nil
+	r := request(t, f, "alice", []string{"prod-ssh"}, 2*time.Hour)
+	if err := svc.Handle(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	var seen types.AccessRequestUpdate
+	f.OnSetState = func(p types.AccessRequestUpdate) error { seen = p; return nil }
+	if _, err := svc.Approve(context.Background(), r.GetName(), Approver{TeleportUser: "bob", Email: "bob@example.com", Adapter: "portal", PlatformUserID: "bob"}, "from the portal"); err != nil {
+		t.Fatal(err)
+	}
+	if got := seen.Annotations["access-broker/mode"]; len(got) != 1 || got[0] != "portal" {
+		t.Fatalf("mode annotation = %v", seen.Annotations)
+	}
+	if got := seen.Annotations["access-broker/channel"]; len(got) != 1 || got[0] != "portal" {
+		t.Fatalf("channel annotation = %v", seen.Annotations)
+	}
+	rec, ok := svc.Store.Get(r.GetName())
+	if !ok || rec.Resolution == nil || rec.Resolution.Mode != "portal" || rec.Resolution.By != "bob" {
+		t.Fatalf("resolution = %+v", rec)
+	}
+}

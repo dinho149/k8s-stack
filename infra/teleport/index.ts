@@ -79,5 +79,6 @@ export const accessNamespace = services.namespace.metadata.name;
 export const mcpSharedToken = pulumi.secret(services.mcpSharedToken);
 export const brokerApiToken = pulumi.secret(services.brokerApiToken);
 export const identitySigningKey = pulumi.secret(services.identitySigningKey);
+export const portalServiceToken = pulumi.secret(services.portalServiceToken);
 // `--insecure` only where the proxy certificate is self-signed (kind); anywhere else tsh must verify TLS.
 export const loginHint = pulumi.interpolate`./bin/tsh${profile.teleport.insecure ? " --insecure" : ""} --proxy ${cluster.proxyAddr} login --auth ${profile.auth.type === "github" ? "github" : "local --user admin"}`;

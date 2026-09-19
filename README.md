@@ -68,6 +68,7 @@ make teleport-down         # destroy the Teleport stack; the cluster stays
 
 `make help-all` lists the whole **Teleport** group. Read [docs/teleport/local.md](docs/teleport/local.md) for the
 walkthrough and [docs/teleport/access-model.md](docs/teleport/access-model.md) for the access model.
+The portal's **Access** tab requests and approves Teleport roles: `make teleport-portal-forward PORTAL_FORWARD=background && make restart` ([docs/teleport/portal.md](docs/teleport/portal.md)).
 
 ### Preview workflow
 

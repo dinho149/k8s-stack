@@ -15,6 +15,7 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/yeaboi/k8s-stack/internal/teleportaccess/accessapi"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/assertion"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/policy"
 	"github.com/yeaboi/k8s-stack/internal/teleportaccess/teleport/fake"
@@ -198,10 +199,10 @@ func TestPolicyDenyRefusesCreation(t *testing.T) {
 func TestCreateRateLimit(t *testing.T) {
 	cs, _ := setup(t, Principal{TeleportUser: "alice", Source: "stdio"})
 	var limited bool
-	for i := 0; i < createBurst+1; i++ {
+	for i := 0; i < accessapi.CreateBurst+1; i++ {
 		res, _ := call(t, cs, "create_access_request", map[string]any{"roles": []string{"dev-ssh"}, "reason": "testing access", "dry_run": true})
 		if res.IsError && strings.Contains(errText(res), "rate limited") {
-			limited = i == createBurst
+			limited = i == accessapi.CreateBurst
 			break
 		}
 	}

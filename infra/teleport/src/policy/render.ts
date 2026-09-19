@@ -210,7 +210,14 @@ export function renderBotRoles(edition: Edition, opts: { harness?: boolean } = {
     description: "Chat agent: read-only user lookup for identity mapping",
     spec: { allow: { rules: [{ resources: ["user"], verbs: READ }] } },
   };
-  return [mcp, broker, agent, ...(opts.harness ? [renderHarnessRole()] : [])];
+  // The portal API needs exactly what the MCP server needs (reads + create); approvals go through the broker,
+  // so it never gets access_request:update.
+  const portal: RenderedRole = {
+    name: BOTS.portal.role,
+    description: "Access portal API: read users/roles/inventory, create pending access requests for portal users; approvals go through the broker",
+    spec: mcp.spec,
+  };
+  return [mcp, broker, agent, portal, ...(opts.harness ? [renderHarnessRole()] : [])];
 }
 
 /** Every role Pulumi manages. The harness role is only included when explicitly enabled. */

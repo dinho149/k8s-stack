@@ -6,7 +6,8 @@
  *                     auth    <- proxy, operator, 3 namespaces :3025 -> kube API / SSO / cloud backends (443, 6443)
  *                     operator                                       -> auth:3025, kube API
  *   teleport-access   mcp     <- agent :8080                         -> auth, proxy
- *                     broker  <- agent :8081                         -> auth, proxy, agent:8082
+ *                     broker  <- agent, portal :8081                 -> auth, proxy, agent:8082
+ *                     portal  <- [backstage backend :8084 (cloud)]    -> auth, proxy, broker:8081
  *                     agent   <- broker :8082, [anyone :8083 (chat webhooks, http adapters only)]
  *                                                                    -> mcp, broker, internet:443 (LLM + chat APIs)
  *                     harness                                        -> auth, kube API (writes its identity Secret)
@@ -47,6 +48,7 @@ export const SELECTORS = {
   mcp: { app: BOTS.mcp.name },
   broker: { app: BOTS.broker.name },
   agent: { app: BOTS.agent.name },
+  portal: { app: BOTS.portal.name },
   harness: { app: BOTS.harness.name },
   kubeAgent: { "app.kubernetes.io/part-of": "kube-agents" },
   sshNodes: { "app.kubernetes.io/part-of": "ssh-nodes" },
@@ -59,6 +61,8 @@ export const AGENT_PORT = 8082;
 export const AGENT_PUBLIC_PORT = 8083;
 export const MCP_PORT = 8080;
 export const BROKER_PORT = 8081;
+/** Port of the access portal API (teleport-access portal). */
+export const PORTAL_PORT = 8084;
 export const DUMMY_DB_PORTS = [5432, 3306];
 export const DUMMY_APP_PORTS = [80, 8080, 4566];
 
@@ -129,10 +133,25 @@ export function renderNetworkPolicies(p: EnvProfile): RenderedPolicy[] {
     spec: {
       podSelector: { matchLabels: SELECTORS.broker },
       policyTypes: ["Ingress", "Egress"],
-      ingress: [{ from: [pods(SELECTORS.agent)], ports: tcp(BROKER_PORT) }],
+      ingress: [{ from: [pods(SELECTORS.agent), ...(p.services.portal.enabled ? [pods(SELECTORS.portal)] : [])], ports: tcp(BROKER_PORT) }],
       egress: [toAuth, toProxy, { to: [pods(SELECTORS.agent)], ports: tcp(AGENT_PORT) }],
     },
   });
+  if (p.services.portal.enabled) {
+    const backstage = p.services.portal.backstage;
+    out.push({
+      name: "portal",
+      namespace: ACCESS_NAMESPACE,
+      spec: {
+        podSelector: { matchLabels: SELECTORS.portal },
+        policyTypes: ["Ingress", "Egress"],
+        // Only the Backstage backend may call the portal API. On kind nothing is admitted (kubectl port-forward
+        // arrives from the node, outside pod-selector policies); in cloud the configured Backstage pods are.
+        ingress: backstage ? [{ from: [nsPods(backstage.namespace, backstage.podLabels)], ports: tcp(PORTAL_PORT) }] : [],
+        egress: [toAuth, toProxy, { to: [pods(SELECTORS.broker)], ports: tcp(BROKER_PORT) }],
+      },
+    });
+  }
   out.push({
     name: "agent",
     namespace: ACCESS_NAMESPACE,

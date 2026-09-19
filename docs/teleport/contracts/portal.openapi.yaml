@@ -1,0 +1,207 @@
+openapi: 3.1.0
+info:
+  title: access-portal API
+  version: "1"
+  description: |
+    HTTP API behind the Dogfood portal's Access pages (internal/teleportaccess, `portal` subcommand).
+    Consumed ONLY by the Backstage backend (packages/backend), which authenticates the person and forwards
+    `/api/platform/access/*` here as `/v1/*`.
+
+    Authentication (same trust model as the lifecycle API):
+    * Every /v1 route requires `Authorization: Bearer <TA_PORTAL_SERVICE_TOKEN>` (proves the caller is the Backstage backend).
+    * `X-Dogfood-Subject` names the signed-in person. It is mapped to a Teleport user through the identity map
+      (`TA_PORTAL_IDENTITY_MAP_FILE`, JSON {"subject": "user"}) or, with `TA_PORTAL_IDENTITY_FALLBACK=username`, used as
+      the Teleport username when it is shaped like one (Teleport usernames are GitHub logins in cloud). The user must
+      exist in Teleport and must not be a bot: otherwise 403 `unmapped_subject` / `unknown_user`.
+    * Approve/deny are forwarded to the access broker with a signed identity assertion (`platform: portal`,
+      `platform_user_id: <subject>`); the broker verifies approver roles and blocks self-approval. Its refusals pass
+      through with their codes; a broker 401 (the portal's own credentials) is reported as 502 `broker_auth`.
+    * The API refuses cross-origin browser requests; it is reachable only from the Backstage backend
+      (NetworkPolicy in cloud, kubectl port-forward locally).
+
+    Every read and every request creation goes through the same code as the MCP tools (internal/teleportaccess/accessapi),
+    so guards and JSON shapes are identical: reason 8-512 characters (control characters stripped), at most 20 roles
+    and 20 resource ids, every role must be requestable by the user per Teleport and not an internal role, TTL defaults
+    to 2h and is capped at 4h then at the policy `ttl_cap`, a policy `deny` refuses creation (400 `policy_denied`).
+    Per-user create budget: 5 per minute (burst 5) and 20 per hour -> 429 `rate_limited`.
+
+    Limits: JSON bodies are capped at 64 KiB (unknown fields are rejected: identity can never travel in a body);
+    /v1 is rate limited (50 req/s, burst 100 -> 429); every Teleport call has a 15 s deadline (504 `teleport_timeout`).
+security:
+  - bearer: []
+paths:
+  /healthz: { get: { security: [], responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } } } } }
+  /readyz: { get: { security: [], responses: { "200": { description: ready }, "503": { description: not ready } } } }
+  /v1/me:
+    get:
+      summary: The caller's roles, traits, active elevated roles (with expiry) and effective access
+      responses: { "200": { description: whoami, content: { application/json: { schema: { $ref: "#/components/schemas/Whoami" } } } }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" } }
+  /v1/cluster:
+    get:
+      responses: { "200": { description: cluster, content: { application/json: { schema: { type: object, properties: { cluster_name: { type: string }, teleport_version: { type: string }, edition: { type: string, enum: [community, enterprise] }, approval_model: { type: string } } } } } } }
+  /v1/roles:
+    get:
+      parameters: [{ name: q, in: query, schema: { type: string }, description: substring filter on role names }]
+      responses: { "200": { description: catalog (internal roles hidden), content: { application/json: { schema: { type: object, properties: { roles: { type: array, items: { $ref: "#/components/schemas/RoleSummary" } } } } } } } }
+  /v1/roles/{name}:
+    get:
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: role detail, content: { application/json: { schema: { type: object, properties: { role: { $ref: "#/components/schemas/RoleSummary" }, deny: { type: object }, kubernetes_resources: { type: array }, requestable: { type: boolean }, prediction: { $ref: "#/components/schemas/RequestableRole" } } } } } }, "404": { $ref: "#/components/responses/Error" } }
+  /v1/requestable-roles:
+    get:
+      responses: { "200": { description: roles the caller may request with the policy prediction, content: { application/json: { schema: { type: object, properties: { requestable_roles: { type: array, items: { $ref: "#/components/schemas/RequestableRole" } }, suggested_reviewers: { type: array, items: { type: string } }, require_reason: { type: boolean } } } } } } }
+  /v1/resources:
+    get:
+      summary: Search resources (scoped to what the caller holds or may request; approvers see everything)
+      parameters: [{ name: q, in: query, schema: { type: string, maxLength: 256 } }, { name: kind, in: query, schema: { type: string, enum: [node, db, kube_cluster, app, windows_desktop] } }, { name: limit, in: query, schema: { type: integer, maximum: 200, default: 50 } }]
+      responses: { "200": { description: resources, content: { application/json: { schema: { type: object, properties: { resources: { type: array, items: { $ref: "#/components/schemas/Resource" } }, scoped: { type: boolean }, note: { type: string } } } } } }, "400": { $ref: "#/components/responses/Error" } }
+  /v1/resources/accessible:
+    get:
+      summary: Resources the caller can reach now (approximate, computed from label selectors)
+      parameters: [{ name: q, in: query, schema: { type: string } }, { name: kind, in: query, schema: { type: string } }, { name: limit, in: query, schema: { type: integer, maximum: 500, default: 100 } }]
+      responses: { "200": { description: resources with via_roles, content: { application/json: { schema: { type: object, properties: { resources: { type: array, items: { allOf: [{ $ref: "#/components/schemas/Resource" }, { type: object, properties: { via_roles: { type: array, items: { type: string } } } }] } }, approximate: { type: boolean, const: true }, note: { type: string } } } } } } }
+  /v1/resources/{kind}/{name}/access:
+    get:
+      summary: Which roles grant a resource, which the caller holds or may request, and how policy would decide
+      parameters: [{ name: kind, in: path, required: true, schema: { type: string } }, { name: name, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: explanation (internal/teleportaccess/access.ExplainResult) }, "404": { $ref: "#/components/responses/Error" } }
+  /v1/approvers:
+    get:
+      parameters: [{ name: role, in: query, schema: { type: string } }, { name: resource, in: query, schema: { type: string }, description: alternative to role; approvers of the minimal role granting it }]
+      responses: { "200": { description: approver roles, users holding them, suggested reviewers, content: { application/json: { schema: { type: object, properties: { role: { type: string }, policy_action: { type: string }, policy_rule: { type: string }, approver_roles: { type: array, items: { type: string } }, approvers: { type: array, items: { type: string } }, suggested_reviewers: { type: array, items: { type: string } }, how: { type: string } } } } } }, "400": { $ref: "#/components/responses/Error" } }
+  /v1/requests/preview:
+    post:
+      summary: Validate a request and predict the decision without creating it (dry run)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateRequest" } } } }
+      responses: { "200": { description: dry-run result (dry_run=true, created=false), content: { application/json: { schema: { $ref: "#/components/schemas/CreateResult" } } } }, "400": { $ref: "#/components/responses/Error" }, "429": { $ref: "#/components/responses/Error" } }
+  /v1/requests:
+    get:
+      summary: The caller's own requests
+      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, approved, denied] }, description: omit for all }]
+      responses: { "200": { description: list, content: { application/json: { schema: { $ref: "#/components/schemas/RequestList" } } } }, "400": { $ref: "#/components/responses/Error" } }
+    post:
+      summary: Create a PENDING access request for the caller
+      parameters: [{ name: Idempotency-Key, in: header, schema: { type: string }, description: the same subject + key within 10 minutes replays the first result instead of creating twice }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CreateRequest" } } } }
+      responses:
+        "201": { description: created, content: { application/json: { schema: { $ref: "#/components/schemas/CreateResult" } } } }
+        "400": { description: bad_request | bad_json | policy_denied, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { description: Teleport refused the request (created=false, error and the tsh command to try by hand), content: { application/json: { schema: { $ref: "#/components/schemas/CreateResult" } } } }
+  /v1/requests/{id}:
+    get:
+      summary: One request (the caller's own, or any request when the caller is an approver)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string }, description: full id or unique prefix }]
+      responses: { "200": { description: request, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "404": { $ref: "#/components/responses/Error" } }
+  /v1/approvals:
+    get:
+      summary: Pending requests awaiting the caller (approvers only; the caller's own requests are excluded)
+      parameters: [{ name: role, in: query, schema: { type: string }, description: only requests including this role }]
+      responses: { "200": { description: queue, content: { application/json: { schema: { $ref: "#/components/schemas/RequestList" } } } }, "403": { description: teleport_denied (not an approver), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } } }
+  /v1/requests/{id}/approve:
+    post:
+      summary: Approve through the access broker
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses: { "200": { description: the request after the decision, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "400": { $ref: "#/components/responses/Error" }, "403": { description: not_approver | self_approval | teleport_denied, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }, "404": { $ref: "#/components/responses/Error" }, "409": { description: not_pending, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }, "501": { description: native_mode (Enterprise approvals are handled in Teleport), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }, "502": { description: broker_unavailable | broker_auth, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } } }
+  /v1/requests/{id}/deny:
+    post:
+      summary: Deny through the access broker (a reason is required)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+      responses: { "200": { description: the request after the decision, content: { application/json: { schema: { $ref: "#/components/schemas/Request" } } } }, "400": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" }, "404": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" }, "501": { $ref: "#/components/responses/Error" }, "502": { $ref: "#/components/responses/Error" } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, description: TA_PORTAL_SERVICE_TOKEN; with it the X-Dogfood-Subject header is trusted }
+  responses:
+    Error: { description: error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Status: { type: object, properties: { status: { type: string } } }
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [unauthorized, unmapped_subject, unknown_user, bad_json, bad_request, bad_reason, policy_denied, not_found, teleport_denied, not_approver, self_approval, not_pending, native_mode, rate_limited, teleport_timeout, teleport_error, broker_unavailable, broker_auth, broker_error] }
+    Decision:
+      type: object
+      additionalProperties: false
+      properties: { reason: { type: string, maxLength: 1024 } }
+      description: The approver identity never travels in the body; it is the authenticated subject.
+    CreateRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        roles: { type: array, items: { type: string }, maxItems: 20 }
+        resource_ids: { type: array, items: { type: string }, maxItems: 20, description: Enterprise resource requests, e.g. /cluster/node/name }
+        reason: { type: string, minLength: 8, maxLength: 512 }
+        ttl: { type: string, description: Go duration, default 2h, max 4h (then capped by policy) }
+        dry_run: { type: boolean, description: ignored on POST /v1/requests (false) and /preview (true) }
+    Prediction:
+      type: object
+      properties: { action: { type: string, enum: [auto_approve, require_approval, deny] }, rule: { type: string }, reason: { type: string }, ttl_cap: { type: string }, approvers: { type: array, items: { type: string } } }
+    CreateResult:
+      type: object
+      properties:
+        created: { type: boolean }
+        dry_run: { type: boolean }
+        request: { $ref: "#/components/schemas/Request" }
+        prediction: { $ref: "#/components/schemas/Prediction" }
+        tsh_command: { type: string, description: the equivalent tsh request create command }
+        note: { type: string }
+        error: { type: string, description: set when created=false }
+        ttl_clamped_from: { type: string, description: set when the requested TTL was reduced }
+        ttl: { type: string }
+    Review: { type: object, properties: { author: { type: string }, state: { type: string }, reason: { type: string }, created: { type: string, format: date-time } } }
+    Request:
+      type: object
+      properties:
+        id: { type: string }
+        user: { type: string }
+        roles: { type: array, items: { type: string } }
+        resource_ids: { type: array, items: { type: string } }
+        reason: { type: string }
+        state: { type: string, enum: [PENDING, APPROVED, DENIED, PROMOTED] }
+        created: { type: string, format: date-time }
+        expires: { type: string, format: date-time }
+        resolve_reason: { type: string }
+        reviews: { type: array, items: { type: string }, description: "author: STATE (reason)" }
+        reviews_detail: { type: array, items: { $ref: "#/components/schemas/Review" } }
+        annotations: { type: object, additionalProperties: { type: array, items: { type: string } }, description: access-broker/mode (auto|chat|portal), access-broker/approver, access-broker/channel, access-broker/rule }
+        tsh_login_command: { type: string, description: set while the request is APPROVED and unexpired }
+        tsh_status_command: { type: string }
+    RequestList: { type: object, properties: { requests: { type: array, items: { $ref: "#/components/schemas/Request" } } } }
+    RoleSummary:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        node_labels: { $ref: "#/components/schemas/Labels" }
+        db_labels: { $ref: "#/components/schemas/Labels" }
+        kubernetes_labels: { $ref: "#/components/schemas/Labels" }
+        app_labels: { $ref: "#/components/schemas/Labels" }
+        logins: { type: array, items: { type: string } }
+        db_users: { type: array, items: { type: string } }
+        db_names: { type: array, items: { type: string } }
+        kubernetes_groups: { type: array, items: { type: string } }
+        can_request_roles: { type: array, items: { type: string } }
+        can_review_roles: { type: array, items: { type: string } }
+        max_session_ttl: { type: string }
+        rules: { type: array, items: { type: string } }
+    Labels: { type: object, additionalProperties: { type: array, items: { type: string } } }
+    RequestableRole: { type: object, properties: { role: { type: string }, description: { type: string }, prediction: { type: string, enum: [auto_approve, require_approval, deny, unknown] }, rule: { type: string }, approver_roles: { type: array, items: { type: string } }, ttl_cap: { type: string } } }
+    Whoami:
+      type: object
+      properties:
+        user: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        traits: { $ref: "#/components/schemas/Labels" }
+        active_elevated_roles: { type: object, additionalProperties: { type: string, format: date-time }, description: role -> expiry }
+        is_approver: { type: boolean }
+        effective_access: { type: array, items: { $ref: "#/components/schemas/RoleSummary" } }
+        note: { type: string }
+    Resource:
+      type: object
+      properties: { kind: { type: string }, name: { type: string }, hostname: { type: string }, addr: { type: string }, description: { type: string }, protocol: { type: string }, labels: { type: object, additionalProperties: { type: string } }, logins: { type: array, items: { type: string } }, requires_request: { type: boolean } }

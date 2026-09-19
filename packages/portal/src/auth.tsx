@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { ProxiedSignInPage, UserIdentity } from '@backstage/core-components';
 import {
   createApiRef,
+  githubAuthApiRef,
   useApi,
   type OAuthApi,
   type OpenIdConnectApi,
@@ -129,7 +130,47 @@ function OidcSignIn(props: SignInPageProps) {
     </>
   );
 }
-export function DogfoodSignIn(props: SignInPageProps & { local: boolean }) {
+function GithubSignIn(props: SignInPageProps) {
+  const auth = useApi(githubAuthApiRef);
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  return (
+    <>
+      <Alert error={error} />
+      <button
+        className="primary signin-button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError('');
+          try {
+            const result = await auth.getBackstageIdentity({ instantPopup: true });
+            if (!result)
+              throw new Error(
+                'GitHub sign-in is not configured. Contact your platform administrator.',
+              );
+            props.onSignInSuccess(
+              UserIdentity.create({
+                identity: result.identity,
+                authApi: auth,
+                profile: await auth.getProfile(),
+              }),
+            );
+          } catch (e) {
+            setError(errorText(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Connecting…' : 'Continue with GitHub'}
+        <Icon name="arrow" size={18} />
+      </button>
+      <small>Your GitHub login is also your Teleport username.</small>
+    </>
+  );
+}
+export function DogfoodSignIn(props: SignInPageProps & { local: boolean; provider?: string }) {
   return (
     <SignInLayout>
       {props.local ? (
@@ -137,6 +178,8 @@ export function DogfoodSignIn(props: SignInPageProps & { local: boolean }) {
           <p>Connecting to your local development account.</p>
           <ProxiedSignInPage {...props} provider="guest" ErrorComponent={LocalError} />
         </>
+      ) : props.provider === 'github' ? (
+        <GithubSignIn {...props} />
       ) : (
         <OidcSignIn {...props} />
       )}

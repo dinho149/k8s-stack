@@ -98,7 +98,10 @@ tsh request create --roles prod-ssh --reason "incident 123" --nowait   # needs a
 make teleport-requests && make teleport-approve ID=<id>
 ```
 
-The web UI cannot raise or review requests on Community Edition: `Identity Governance → Access Requests` only shows
+The Dogfood portal's **Access** tab is where people request and approve roles (see [portal.md](portal.md)):
+`make teleport-portal-forward PORTAL_FORWARD=background && make restart`, then `make open`.
+
+Teleport's own web UI cannot raise or review requests on Community Edition: `Identity Governance → Access Requests` only shows
 the "Unlock Access Requests With Teleport Enterprise" page. Requests are created with `tsh request create`, the
 access agent (`make teleport-agent-cli AS=alice`, or the Slack / Teams / Google Chat adapters) or the MCP server, and
 approved with `tsh request review --approve <id>` (as `bob`), `make teleport-approve`, or the agent's approver card. A grant lives
