@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w -X main.version=
 
 # checkov:skip=CKV_DOCKER_2: Kubernetes readiness/liveness probes cover health (see AccessServices.ts); the runtime image is
 # distroless static with no shell or client to run a Docker HEALTHCHECK, which kubelet ignores anyway.
-FROM cgr.dev/chainguard/static:latest@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
+FROM cgr.dev/chainguard/static:latest@sha256:fe55470f22d3259488d9d3739168d8f04da67755f0b69382bc26eda4a7d3d327
 COPY --from=build /out/teleport-access /teleport-access
 # nonroot (65532) is the only user in the static image; numeric so the kubelet can verify runAsNonRoot.
 USER 65532:65532
