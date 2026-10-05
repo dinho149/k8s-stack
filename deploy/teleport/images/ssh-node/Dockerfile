@@ -4,7 +4,7 @@
 # Bases are pinned by digest (Dependabot refreshes them). Refresh manually:
 #   docker buildx imagetools inspect public.ecr.aws/gravitational/teleport-distroless-debug:18.11.1
 #   docker buildx imagetools inspect cgr.dev/chainguard/wolfi-base:latest
-FROM public.ecr.aws/gravitational/teleport-distroless-debug:18.11.1@sha256:af8910b2c9f45f05bf908272daa0fdfe2238304506b33ea7945a739f39dca1f9 AS teleport
+FROM public.ecr.aws/gravitational/teleport-distroless-debug:18.11.3@sha256:7639bdc0b60516996d6a3ec4f9429140abc9aa264470aa23b85cefc8e7d8ba45 AS teleport
 
 # checkov:skip=CKV_DOCKER_2: a dummy Teleport SSH node; the pod has Kubernetes probes and kubelet ignores Docker HEALTHCHECK.
 FROM cgr.dev/chainguard/wolfi-base:latest@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d
