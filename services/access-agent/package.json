@@ -15,9 +15,9 @@
     "lint": "eslint --max-warnings 0 ."
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.126.0",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@fastify/rate-limit": "^11.2.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@slack/bolt": "^5.1.0",
     "ajv": "^8.17.0",
     "botbuilder": "^4.23.3",
@@ -30,11 +30,11 @@
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
-    "eslint": "^10.10.0",
-    "eslint-plugin-security": "^4.0.1",
-    "tsx": "^4.23.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-security": "^4.2.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.0",
-    "vitest": "^5.0.1"
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
   }
 }
