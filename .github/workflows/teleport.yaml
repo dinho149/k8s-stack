@@ -147,7 +147,7 @@ jobs:
       # go.mod only: the npm lockfile is shared with the Dogfood workspaces (Backstage, portal, agent) and is
       # audited by their gate (`make audit`, npm audit --audit-level=high in make ship-gate).
       - name: osv-scanner (Go module)
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             --lockfile=go.mod
@@ -155,11 +155,11 @@ jobs:
             --output=osv.sarif
         continue-on-error: true
       - name: osv-scanner (fail on findings)
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             --lockfile=go.mod
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('osv.sarif') != ''
         continue-on-error: true
         with: { sarif_file: osv.sarif, category: osv-scanner }
@@ -183,7 +183,7 @@ jobs:
             --include 'deploy/teleport/**' --include 'infra/teleport/**' --include 'services/access-agent/**' \
             --include '.github/workflows/teleport*.yaml' --include 'Makefile' --include 'scripts/local.py' \
             --sarif --output semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('semgrep.sarif') != ''
         continue-on-error: true
         with: { sarif_file: semgrep.sarif, category: semgrep }
@@ -204,7 +204,7 @@ jobs:
       # The action's pinned checkov (2.0.x) accepts one framework per run and always writes ./results.sarif,
       # so: one step per framework, rename the report after each, upload each under its own category.
       - name: checkov (rendered Kubernetes manifests)
-        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: tests/teleport/policy/rendered
           framework: kubernetes
@@ -213,7 +213,7 @@ jobs:
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-k8s.sarif; fi
       - name: checkov (Teleport image Dockerfiles)
-        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: deploy/teleport
           framework: dockerfile
@@ -222,7 +222,7 @@ jobs:
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-dockerfile.sarif; fi
       - name: checkov (access-agent Dockerfile)
-        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: services/access-agent
           framework: dockerfile
@@ -232,7 +232,7 @@ jobs:
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-agent-dockerfile.sarif; fi
       - name: checkov (GitHub workflows)
-        uses: bridgecrewio/checkov-action@a8664e3a0549367977f0cda990a34311835c87c0 # v12.3123.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: .github/workflows
           framework: github_actions
@@ -242,19 +242,19 @@ jobs:
           output_format: sarif
       - if: always()
         run: if [ -f results.sarif ]; then mv results.sarif checkov-workflows.sarif; fi
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('checkov-k8s.sarif') != ''
         continue-on-error: true
         with: { sarif_file: checkov-k8s.sarif, category: checkov-kubernetes }
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('checkov-dockerfile.sarif') != ''
         continue-on-error: true
         with: { sarif_file: checkov-dockerfile.sarif, category: checkov-dockerfile }
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('checkov-agent-dockerfile.sarif') != ''
         continue-on-error: true
         with: { sarif_file: checkov-agent-dockerfile.sarif, category: checkov-agent-dockerfile }
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('checkov-workflows.sarif') != ''
         continue-on-error: true
         with: { sarif_file: checkov-workflows.sarif, category: checkov-workflows }
@@ -317,7 +317,7 @@ jobs:
           format: table
           skip-setup-trivy: true
           cache: "false"
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles('trivy-fs.sarif') != ''
         continue-on-error: true
         with: { sarif_file: trivy-fs.sarif, category: trivy-fs }
@@ -374,7 +374,7 @@ jobs:
           format: table
           skip-setup-trivy: true
           cache: "false"
-      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always() && hashFiles(format('trivy-{0}.sarif', matrix.name)) != ''
         continue-on-error: true
         with: { sarif_file: "trivy-${{ matrix.name }}.sarif", category: "trivy-image-${{ matrix.name }}" }
@@ -403,7 +403,7 @@ jobs:
         with: { node-version: 24, cache: npm }
       - uses: pulumi/setup-pulumi@b374ceb6168550de27c6eba92e01c1a774040e11 # v2.0.0
       # The Dogfood kind config (no default CNI); a preview only needs the API server, not Ready nodes.
-      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with: { cluster_name: dogfood-local, config: deploy/kind/config.yaml, wait: 0s }
       - run: npm ci --no-fund --ignore-scripts
       - name: pulumi preview (rendered against the kind context)
@@ -430,7 +430,7 @@ jobs:
         with: { version: v3.18.6 }
       # The same cluster shape Dogfood's bootstrap creates: the kind config with Teleport's 3080 mapping and
       # Cilium as the CNI (scripts/bootstrap.sh installs the rest of the platform, which the e2e does not need).
-      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with: { cluster_name: dogfood-local, config: deploy/kind/config.yaml, wait: 0s }
       - name: Install Cilium (as scripts/bootstrap.sh does)
         run: |
