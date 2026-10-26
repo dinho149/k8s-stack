@@ -20,7 +20,7 @@ jobs:
     # Configure required reviewers on staging/prod. Credentials remain outside this job.
     environment: ${{ inputs.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: {ref: main}
       - name: Update GitOps desired state
         env:
